@@ -3,19 +3,19 @@ import torch
 import torch.nn as nn
 
 def calc_iou(a, b):
-    area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
+    area = (b[:, 2] - b[:, 0]) #* (b[:, 3] - b[:, 1])
 
     iw = torch.min(torch.unsqueeze(a[:, 2], dim=1), b[:, 2]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
-    ih = torch.min(torch.unsqueeze(a[:, 3], dim=1), b[:, 3]) - torch.max(torch.unsqueeze(a[:, 1], 1), b[:, 1])
+    #ih = torch.min(torch.unsqueeze(a[:, 3], dim=1), b[:, 3]) - torch.max(torch.unsqueeze(a[:, 1], 1), b[:, 1])
 
     iw = torch.clamp(iw, min=0)
-    ih = torch.clamp(ih, min=0)
+    #ih = torch.clamp(ih, min=0)
 
-    ua = torch.unsqueeze((a[:, 2] - a[:, 0]) * (a[:, 3] - a[:, 1]), dim=1) + area - iw * ih
+    ua = torch.unsqueeze(a[:, 2] - a[:, 0], dim=1) + area - iw #* ih
 
     ua = torch.clamp(ua, min=1e-8)
 
-    intersection = iw * ih
+    intersection = iw #* ih
 
     IoU = intersection / ua
 
@@ -34,9 +34,9 @@ class FocalLoss(nn.Module):
         anchor = anchors[0, :, :]
 
         anchor_widths  = anchor[:, 2] - anchor[:, 0]
-        anchor_heights = anchor[:, 3] - anchor[:, 1]
+        #anchor_heights = anchor[:, 3] - anchor[:, 1]
         anchor_ctr_x   = anchor[:, 0] + 0.5 * anchor_widths
-        anchor_ctr_y   = anchor[:, 1] + 0.5 * anchor_heights
+        #anchor_ctr_y   = anchor[:, 1] + 0.5 * anchor_heights
 
         for j in range(batch_size):
 
@@ -130,31 +130,31 @@ class FocalLoss(nn.Module):
                 assigned_annotations = assigned_annotations[positive_indices, :]
 
                 anchor_widths_pi = anchor_widths[positive_indices]
-                anchor_heights_pi = anchor_heights[positive_indices]
+                #anchor_heights_pi = anchor_heights[positive_indices]
                 anchor_ctr_x_pi = anchor_ctr_x[positive_indices]
-                anchor_ctr_y_pi = anchor_ctr_y[positive_indices]
+                #anchor_ctr_y_pi = anchor_ctr_y[positive_indices]
 
                 gt_widths  = assigned_annotations[:, 2] - assigned_annotations[:, 0]
-                gt_heights = assigned_annotations[:, 3] - assigned_annotations[:, 1]
+                #gt_heights = assigned_annotations[:, 3] - assigned_annotations[:, 1]
                 gt_ctr_x   = assigned_annotations[:, 0] + 0.5 * gt_widths
-                gt_ctr_y   = assigned_annotations[:, 1] + 0.5 * gt_heights
+                #gt_ctr_y   = assigned_annotations[:, 1] + 0.5 * gt_heights
 
                 # clip widths to 1
                 gt_widths  = torch.clamp(gt_widths, min=1)
-                gt_heights = torch.clamp(gt_heights, min=1)
+                #gt_heights = torch.clamp(gt_heights, min=1)
 
                 targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
-                targets_dy = (gt_ctr_y - anchor_ctr_y_pi) / anchor_heights_pi
+                #targets_dy = (gt_ctr_y - anchor_ctr_y_pi) / anchor_heights_pi
                 targets_dw = torch.log(gt_widths / anchor_widths_pi)
-                targets_dh = torch.log(gt_heights / anchor_heights_pi)
+                #targets_dh = torch.log(gt_heights / anchor_heights_pi)
 
-                targets = torch.stack((targets_dx, targets_dy, targets_dw, targets_dh))
+                targets = torch.stack((targets_dx, targets_dw))
                 targets = targets.t()
 
                 if torch.cuda.is_available():
-                    targets = targets/torch.Tensor([[0.1, 0.1, 0.2, 0.2]]).cuda()
+                    targets = targets/torch.Tensor([[0.1, 0.2]]).cuda()
                 else:
-                    targets = targets/torch.Tensor([[0.1, 0.1, 0.2, 0.2]])
+                    targets = targets/torch.Tensor([[0.1, 0.2]])
 
                 negative_indices = 1 + (~positive_indices)
 

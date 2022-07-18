@@ -1,180 +1,165 @@
-import argparse
-import collections
-
-import numpy as np
-
+import os
+import glob
 import torch
-import torch.optim as optim
-from torchvision import transforms
+import torchsummary
+import re
+from itertools import product
+import pytorch_lightning as pl
+from argparse import ArgumentParser
 
+from pytorch_lightning.callbacks import ModelCheckpoint
 from retinanet import model
-from retinanet.dataloader import CocoDataset, CSVDataset, collater, Resizer, AspectRatioBasedSampler, Augmenter, \
-    Normalizer
-from torch.utils.data import DataLoader
+from retinanet.dataloader import BeatDataset
 
-from retinanet import coco_eval
-from retinanet import csv_eval
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
-assert torch.__version__.split('.')[0] == '1'
+torch.multiprocessing.set_sharing_strategy('file_system')
 
-print('CUDA available: {}'.format(torch.cuda.is_available()))
+torch.backends.cudnn.benchmark = True
 
+parser = ArgumentParser()
 
-def main(args=None):
-    parser = argparse.ArgumentParser(description='Simple training script for training a RetinaNet network.')
+# add PROGRAM level args
+parser.add_argument('--dataset', type=str, default='ballroom')
+parser.add_argument('--beatles_audio_dir', type=str, default='./data')
+parser.add_argument('--beatles_annot_dir', type=str, default='./data')
+parser.add_argument('--ballroom_audio_dir', type=str, default='./data')
+parser.add_argument('--ballroom_annot_dir', type=str, default='./data')
+parser.add_argument('--hainsworth_audio_dir', type=str, default='./data')
+parser.add_argument('--hainsworth_annot_dir', type=str, default='./data')
+parser.add_argument('--rwc_popular_audio_dir', type=str, default='./data')
+parser.add_argument('--rwc_popular_annot_dir', type=str, default='./data')
+parser.add_argument('--preload', action="store_true")
+parser.add_argument('--audio_sample_rate', type=int, default=44100)
+parser.add_argument('--target_factor', type=int, default=256) # block 하나당 곱하기 2
+parser.add_argument('--shuffle', type=bool, default=True)
+parser.add_argument('--train_subset', type=str, default='train')
+parser.add_argument('--val_subset', type=str, default='val')
+parser.add_argument('--train_length', type=int, default=65536)
+parser.add_argument('--train_fraction', type=float, default=1.0)
+parser.add_argument('--eval_length', type=int, default=131072)
+parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--num_workers', type=int, default=0)
+parser.add_argument('--augment', action='store_true')
+parser.add_argument('--dry_run', action='store_true')
 
-    parser.add_argument('--dataset', help='Dataset type, must be one of csv or coco.')
-    parser.add_argument('--coco_path', help='Path to COCO directory')
-    parser.add_argument('--csv_train', help='Path to file containing training annotations (see readme)')
-    parser.add_argument('--csv_classes', help='Path to file containing class list (see readme)')
-    parser.add_argument('--csv_val', help='Path to file containing validation annotations (optional, see readme)')
+checkpoint_callback = ModelCheckpoint(
+    verbose=True,
+    monitor='val_loss/Joint F-measure',
+    mode='max'
+)
 
-    parser.add_argument('--depth', help='Resnet depth, must be one of 18, 34, 50, 101, 152', type=int, default=50)
-    parser.add_argument('--epochs', help='Number of epochs', type=int, default=100)
+# add all the available trainer options to argparse
+parser = pl.Trainer.add_argparse_args(parser)
 
-    parser = parser.parse_args(args)
+# THIS LINE IS KEY TO PULL THE MODEL NAME
+temp_args, _ = parser.parse_known_args()
 
-    # Create the data loaders
-    if parser.dataset == 'coco':
+# let the model add what it wants
+parser = dsTCNModel.add_model_specific_args(parser)
 
-        if parser.coco_path is None:
-            raise ValueError('Must provide --coco_path when training on COCO,')
+# parse them args
+args = parser.parse_args()
 
-        dataset_train = CocoDataset(parser.coco_path, set_name='train2017',
-                                    transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]))
-        dataset_val = CocoDataset(parser.coco_path, set_name='val2017',
-                                  transform=transforms.Compose([Normalizer(), Resizer()]))
+datasets = ["ballroom", "hainsworth"]#["beatles", "ballroom", "hainsworth"]#, "rwc_popular"]
 
-    elif parser.dataset == 'csv':
+# set the seed
+pl.seed_everything(42)
 
-        if parser.csv_train is None:
-            raise ValueError('Must provide --csv_train when training on COCO,')
+#
+args.default_root_dir = os.path.join("lightning_logs", "full")
+print(args.default_root_dir)
 
-        if parser.csv_classes is None:
-            raise ValueError('Must provide --csv_classes when training on COCO,')
+state_dicts = glob.glob('./checkpoints/*.ckpt')
+start_epoch = 0
+checkpoint_path = None
+if len(state_dicts) > 0:
+    checkpoint_path = state_dicts[-1]
+    start_epoch = int(re.search("epoch=(.*)-step", checkpoint_path).group(1)) + 1
+    print("loaded:" + checkpoint_path)
+else:
+    print("no checkpoint found")
 
-        dataset_train = CSVDataset(train_file=parser.csv_train, class_list=parser.csv_classes,
-                                   transform=transforms.Compose([Normalizer(), Augmenter(), Resizer()]))
+# create the trainer
+trainer = pl.Trainer.from_argparse_args(
+    args,
+    checkpoint_callback=checkpoint_callback,
+    resume_from_checkpoint=checkpoint_path
+)
 
-        if parser.csv_val is None:
-            dataset_val = None
-            print('No validation annotations provided.')
-        else:
-            dataset_val = CSVDataset(train_file=parser.csv_val, class_list=parser.csv_classes,
-                                     transform=transforms.Compose([Normalizer(), Resizer()]))
+# setup the dataloaders
+train_datasets = []
+val_datasets = []
 
-    else:
-        raise ValueError('Dataset type not understood (must be csv or coco), exiting.')
+for dataset in datasets:
+    if dataset == "beatles":
+        audio_dir = args.beatles_audio_dir
+        annot_dir = args.beatles_annot_dir
+    elif dataset == "ballroom":
+        audio_dir = args.ballroom_audio_dir
+        annot_dir = args.ballroom_annot_dir
+    elif dataset == "hainsworth":
+        audio_dir = args.hainsworth_audio_dir
+        annot_dir = args.hainsworth_annot_dir
+    elif dataset == "rwc_popular":
+        audio_dir = args.rwc_popular_audio_dir
+        annot_dir = args.rwc_popular_annot_dir
 
-    sampler = AspectRatioBasedSampler(dataset_train, batch_size=2, drop_last=False)
-    dataloader_train = DataLoader(dataset_train, num_workers=3, collate_fn=collater, batch_sampler=sampler)
+    train_dataset = BeatDataset(audio_dir,
+                                    annot_dir,
+                                    dataset=dataset,
+                                    audio_sample_rate=args.audio_sample_rate,
+                                    target_factor=args.target_factor,
+                                    subset="train",
+                                    fraction=args.train_fraction,
+                                    augment=args.augment,
+                                    half=True if args.precision == 16 else False,
+                                    preload=args.preload,
+                                    length=args.train_length,
+                                    dry_run=args.dry_run)
+    train_datasets.append(train_dataset)
 
-    if dataset_val is not None:
-        sampler_val = AspectRatioBasedSampler(dataset_val, batch_size=1, drop_last=False)
-        dataloader_val = DataLoader(dataset_val, num_workers=3, collate_fn=collater, batch_sampler=sampler_val)
+    val_dataset = BeatDataset(audio_dir,
+                                 annot_dir,
+                                 dataset=dataset,
+                                 audio_sample_rate=args.audio_sample_rate,
+                                 target_factor=args.target_factor,
+                                 subset="val",
+                                 augment=False,
+                                 half=True if args.precision == 16 else False,
+                                 preload=args.preload,
+                                 length=args.eval_length,
+                                 dry_run=args.dry_run)
+    val_datasets.append(val_dataset)
 
-    # Create the model
-    if parser.depth == 18:
-        retinanet = model.resnet18(num_classes=dataset_train.num_classes(), pretrained=True)
-    elif parser.depth == 34:
-        retinanet = model.resnet34(num_classes=dataset_train.num_classes(), pretrained=True)
-    elif parser.depth == 50:
-        retinanet = model.resnet50(num_classes=dataset_train.num_classes(), pretrained=True)
-    elif parser.depth == 101:
-        retinanet = model.resnet101(num_classes=dataset_train.num_classes(), pretrained=True)
-    elif parser.depth == 152:
-        retinanet = model.resnet152(num_classes=dataset_train.num_classes(), pretrained=True)
-    else:
-        raise ValueError('Unsupported model depth, must be one of 18, 34, 50, 101, 152')
+train_dataset_list = torch.utils.data.ConcatDataset(train_datasets)
+val_dataset_list = torch.utils.data.ConcatDataset(val_datasets)
 
-    use_gpu = True
+train_dataloader = torch.utils.data.DataLoader(train_dataset_list, 
+                                                shuffle=args.shuffle,
+                                                batch_size=args.batch_size,
+                                                num_workers=args.num_workers,
+                                                pin_memory=True)
+val_dataloader = torch.utils.data.DataLoader(val_dataset_list, 
+                                            shuffle=args.shuffle,
+                                            batch_size=1,
+                                            num_workers=args.num_workers,
+                                            pin_memory=False)    
 
-    if use_gpu:
-        if torch.cuda.is_available():
-            retinanet = retinanet.cuda()
+# create the model with args
+dict_args = vars(args)
+dict_args["nparams"] = 2
+dict_args["target_sample_rate"] = args.audio_sample_rate / args.target_factor
 
-    if torch.cuda.is_available():
-        retinanet = torch.nn.DataParallel(retinanet).cuda()
-    else:
-        retinanet = torch.nn.DataParallel(retinanet)
+model = model(**dict_args)
 
-    retinanet.training = True
-
-    optimizer = optim.Adam(retinanet.parameters(), lr=1e-5)
-
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
-
-    loss_hist = collections.deque(maxlen=500)
-
-    retinanet.train()
-    retinanet.module.freeze_bn()
-
-    print('Num training images: {}'.format(len(dataset_train)))
-
-    for epoch_num in range(parser.epochs):
-
-        retinanet.train()
-        retinanet.module.freeze_bn()
-
-        epoch_loss = []
-
-        for iter_num, data in enumerate(dataloader_train):
-            try:
-                optimizer.zero_grad()
-
-                if torch.cuda.is_available():
-                    classification_loss, regression_loss = retinanet([data['img'].cuda().float(), data['annot']])
-                else:
-                    classification_loss, regression_loss = retinanet([data['img'].float(), data['annot']])
-                    
-                classification_loss = classification_loss.mean()
-                regression_loss = regression_loss.mean()
-
-                loss = classification_loss + regression_loss
-
-                if bool(loss == 0):
-                    continue
-
-                loss.backward()
-
-                torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
-
-                optimizer.step()
-
-                loss_hist.append(float(loss))
-
-                epoch_loss.append(float(loss))
-
-                print(
-                    'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Running loss: {:1.5f}'.format(
-                        epoch_num, iter_num, float(classification_loss), float(regression_loss), np.mean(loss_hist)))
-
-                del classification_loss
-                del regression_loss
-            except Exception as e:
-                print(e)
-                continue
-
-        if parser.dataset == 'coco':
-
-            print('Evaluating dataset')
-
-            coco_eval.evaluate_coco(dataset_val, retinanet)
-
-        elif parser.dataset == 'csv' and parser.csv_val is not None:
-
-            print('Evaluating dataset')
-
-            mAP = csv_eval.evaluate(dataset_val, retinanet)
-
-        scheduler.step(np.mean(epoch_loss))
-
-        torch.save(retinanet.module, '{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
-
-    retinanet.eval()
-
-    torch.save(retinanet, 'model_final.pt')
-
+# summary 
+torchsummary.summary(model, [(1,args.train_length)], device="cpu")
 
 if __name__ == '__main__':
-    main()
+    # train!
+    #for dl in train_dataloader:
+    #    print(dl[0].shape, dl[1].shape)
+    #raise ValueError
+    trainer.fit(model, train_dataloader, val_dataloader)

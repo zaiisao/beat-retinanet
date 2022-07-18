@@ -1,458 +1,539 @@
-from __future__ import print_function, division
-import sys
 import os
-import torch
-import numpy as np
+import glob
+import torch 
+import julius
 import random
-import csv
+import torchaudio
+import numpy as np
+import scipy.signal
+from tqdm import tqdm
+import soxbindings as sox 
 
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms, utils
-from torch.utils.data.sampler import Sampler
+torchaudio.set_audio_backend("sox_io")
 
-from pycocotools.coco import COCO
-
-import skimage.io
-import skimage.transform
-import skimage.color
-import skimage
-
-from PIL import Image
-
-
-class CocoDataset(Dataset):
-    """Coco dataset."""
-
-    def __init__(self, root_dir, set_name='train2017', transform=None):
+class BeatDataset(torch.utils.data.Dataset):
+    """ Downbeat Dataset. """
+    def __init__(self, 
+                 audio_dir, 
+                 annot_dir, 
+                 audio_sample_rate=44100, 
+                 target_factor=256,
+                 dataset="ballroom",
+                 subset="train", 
+                 length=16384, 
+                 preload=False, 
+                 half=True, 
+                 fraction=1.0,
+                 augment=False,
+                 dry_run=False,
+                 pad_mode='constant',
+                 examples_per_epoch=1000):
         """
         Args:
-            root_dir (string): COCO directory.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
+            audio_dir (str): Path to the root directory containing the audio (.wav) files.
+            annot_dir (str): Path to the root directory containing the annotation (.beats) files.
+            audio_sample_rate (float, optional): Sample rate of the audio files. (Default: 44100)
+            target_factor (float, optional): Sample rate of the audio files. (Default: 256)
+            subset (str, optional): Pull data either from "train", "val", "test", or "full-train", "full-val" subsets. (Default: "train")
+            dataset (str, optional): Name of the dataset to be loaded "ballroom", "beatles", "hainsworth", "rwc_popular", "gtzan", "smc". (Default: "ballroom")
+            length (int, optional): Number of samples in the returned examples. (Default: 40)
+            preload (bool, optional): Read in all data into RAM during init. (Default: False)
+            half (bool, optional): Store the float32 audio as float16. (Default: True)
+            fraction (float, optional): Fraction of the data to load from the subset. (Default: 1.0)
+            augment (bool, optional): Apply random data augmentations to input audio. (Default: False)
+            dry_run (bool, optional): Train on a single example. (Default: False)
+            pad_mode (str, optional): Padding type for inputs 'constant', 'reflect', 'replicate' or 'circular'. (Default: 'constant')
+            examples_per_epoch (int, optional): Number of examples to sample from the dataset per epoch. (Default: 1000)
+
+        Notes:
+            - The SMC dataset contains only beats (no downbeats), so it should be used only for beat evaluation.
         """
-        self.root_dir = root_dir
-        self.set_name = set_name
-        self.transform = transform
+        self.audio_dir = audio_dir
+        self.annot_dir = annot_dir
+        self.audio_sample_rate = audio_sample_rate
+        self.target_factor = target_factor
+        self.target_sample_rate = audio_sample_rate / target_factor
+        self.subset = subset
+        self.dataset = dataset
+        self.length = length
+        self.preload = preload
+        self.half = half
+        self.fraction = fraction
+        self.augment = augment
+        self.dry_run = dry_run
+        self.pad_mode = pad_mode
+        self.dataset = dataset
+        self.examples_per_epoch = examples_per_epoch
 
-        self.coco      = COCO(os.path.join(self.root_dir, 'annotations', 'instances_' + self.set_name + '.json'))
-        self.image_ids = self.coco.getImgIds()
+        self.target_length = int(self.length / self.target_factor)
+        #print(f"Audio length: {self.length}")
+        #print(f"Target length: {self.target_length}")
 
-        self.load_classes()
-
-    def load_classes(self):
-        # load class names (name -> label)
-        categories = self.coco.loadCats(self.coco.getCatIds())
-        categories.sort(key=lambda x: x['id'])
-
-        self.classes             = {}
-        self.coco_labels         = {}
-        self.coco_labels_inverse = {}
-        for c in categories:
-            self.coco_labels[len(self.classes)] = c['id']
-            self.coco_labels_inverse[c['id']] = len(self.classes)
-            self.classes[c['name']] = len(self.classes)
-
-        # also load the reverse (label -> name)
-        self.labels = {}
-        for key, value in self.classes.items():
-            self.labels[value] = key
-
-    def __len__(self):
-        return len(self.image_ids)
-
-    def __getitem__(self, idx):
-
-        img = self.load_image(idx)
-        annot = self.load_annotations(idx)
-        sample = {'img': img, 'annot': annot}
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-
-    def load_image(self, image_index):
-        image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
-        path       = os.path.join(self.root_dir, 'images', self.set_name, image_info['file_name'])
-        img = skimage.io.imread(path)
-
-        if len(img.shape) == 2:
-            img = skimage.color.gray2rgb(img)
-
-        return img.astype(np.float32)/255.0
-
-    def load_annotations(self, image_index):
-        # get ground truth annotations
-        annotations_ids = self.coco.getAnnIds(imgIds=self.image_ids[image_index], iscrowd=False)
-        annotations     = np.zeros((0, 5))
-
-        # some images appear to miss annotations (like image with id 257034)
-        if len(annotations_ids) == 0:
-            return annotations
-
-        # parse annotations
-        coco_annotations = self.coco.loadAnns(annotations_ids)
-        for idx, a in enumerate(coco_annotations):
-
-            # some annotations have basically no width / height, skip them
-            if a['bbox'][2] < 1 or a['bbox'][3] < 1:
-                continue
-
-            annotation        = np.zeros((1, 5))
-            annotation[0, :4] = a['bbox']
-            annotation[0, 4]  = self.coco_label_to_label(a['category_id'])
-            annotations       = np.append(annotations, annotation, axis=0)
-
-        # transform from [x, y, w, h] to [x1, y1, x2, y2]
-        annotations[:, 2] = annotations[:, 0] + annotations[:, 2]
-        annotations[:, 3] = annotations[:, 1] + annotations[:, 3]
-
-        return annotations
-
-    def coco_label_to_label(self, coco_label):
-        return self.coco_labels_inverse[coco_label]
-
-
-    def label_to_coco_label(self, label):
-        return self.coco_labels[label]
-
-    def image_aspect_ratio(self, image_index):
-        image = self.coco.loadImgs(self.image_ids[image_index])[0]
-        return float(image['width']) / float(image['height'])
-
-    def num_classes(self):
-        return 80
-
-
-class CSVDataset(Dataset):
-    """CSV dataset."""
-
-    def __init__(self, train_file, class_list, transform=None):
-        """
-        Args:
-            train_file (string): CSV file with training annotations
-            annotations (string): CSV file with class list
-            test_file (string, optional): CSV file with testing annotations
-        """
-        self.train_file = train_file
-        self.class_list = class_list
-        self.transform = transform
-
-        # parse the provided class file
-        try:
-            with self._open_for_csv(self.class_list) as file:
-                self.classes = self.load_classes(csv.reader(file, delimiter=','))
-        except ValueError as e:
-            raise(ValueError('invalid CSV class file: {}: {}'.format(self.class_list, e)))
-
-        self.labels = {}
-        for key, value in self.classes.items():
-            self.labels[value] = key
-
-        # csv with img_path, x1, y1, x2, y2, class_name
-        try:
-            with self._open_for_csv(self.train_file) as file:
-                self.image_data = self._read_annotations(csv.reader(file, delimiter=','), self.classes)
-        except ValueError as e:
-            raise(ValueError('invalid CSV annotations file: {}: {}'.format(self.train_file, e)))
-        self.image_names = list(self.image_data.keys())
-
-    def _parse(self, value, function, fmt):
-        """
-        Parse a string into a value, and format a nice ValueError if it fails.
-        Returns `function(value)`.
-        Any `ValueError` raised is catched and a new `ValueError` is raised
-        with message `fmt.format(e)`, where `e` is the caught `ValueError`.
-        """
-        try:
-            return function(value)
-        except ValueError as e:
-            raise_from(ValueError(fmt.format(e)), None)
-
-    def _open_for_csv(self, path):
-        """
-        Open a file with flags suitable for csv.reader.
-        This is different for python2 it means with mode 'rb',
-        for python3 this means 'r' with "universal newlines".
-        """
-        if sys.version_info[0] < 3:
-            return open(path, 'rb')
+        # first get all of the audio files
+        #if self.dataset in ["beatles", "rwc_popular"]:
+        if self.dataset in ["rwc_popular"]:
+            file_ext = "*L+R.wav"
+        elif self.dataset in ["ballroom", "hainsworth", "gtzan", "smc", "beatles"]:
+            file_ext = "*.wav"
         else:
-            return open(path, 'r', newline='')
+            raise ValueError(f"Invalid dataset: {self.dataset}")
 
-    def load_classes(self, csv_reader):
-        result = {}
+        self.audio_files = glob.glob(os.path.join(self.audio_dir, "**", file_ext))
+        if len(self.audio_files) == 0: # try from the root audio dir
+            self.audio_files = glob.glob(os.path.join(self.audio_dir, file_ext))
 
-        for line, row in enumerate(csv_reader):
-            line += 1
+        random.shuffle(self.audio_files) # shuffle them
 
-            try:
-                class_name, class_id = row
-            except ValueError:
-                raise(ValueError('line {}: format should be \'class_name,class_id\''.format(line)))
-            class_id = self._parse(class_id, int, 'line {}: malformed class ID: {{}}'.format(line))
+        if self.subset == "train":
+            start = 0
+            stop = int(len(self.audio_files) * 0.8)
+        elif self.subset == "val":
+            start = int(len(self.audio_files) * 0.8)
+            stop = int(len(self.audio_files) * 0.9)
+        elif self.subset == "test":
+            start = int(len(self.audio_files) * 0.9)
+            stop = None
+        elif self.subset in ["full-train", "full-val"]:
+            start = 0
+            stop = None
 
-            if class_name in result:
-                raise ValueError('line {}: duplicate class name: \'{}\''.format(line, class_name))
-            result[class_name] = class_id
-        return result
+        # select one file for the dry run
+        if self.dry_run: 
+            self.audio_files = [self.audio_files[0]] * 50
+            print(f"Selected 1 file for dry run.")
+        else:
+            # now pick out subset of audio files
+            self.audio_files = self.audio_files[start:stop]
+            print(f"Selected {len(self.audio_files)} files for {self.subset} set from {self.dataset} dataset.")
+
+        self.annot_files = []
+        for audio_file in self.audio_files:
+            # find the corresponding annot file
+            if self.dataset in ["rwc_popular", "beatles"]:
+                replace = "_L+R.wav"
+            elif self.dataset in ["ballroom", "hainsworth", "gtzan", "smc"]:
+                replace = ".wav"
+            
+            filename = os.path.basename(audio_file).replace(replace, "")
+
+            if self.dataset == "ballroom":
+                self.annot_files.append(os.path.join(self.annot_dir, f"{filename}.beats"))
+            elif self.dataset == "hainsworth":
+                self.annot_files.append(os.path.join(self.annot_dir, f"{filename}.txt"))
+            elif self.dataset == "beatles":
+                underscore_location = filename.find("_")
+                file_number = int(filename[:underscore_location])
+                annot_file = glob.glob(os.path.join(self.annot_dir, f"{file_number}_*.txt"))[0]
+                self.annot_files.append(annot_file)
+            elif self.dataset == "rwc_popular":
+                album_dir = os.path.basename(os.path.dirname(audio_file))
+                annot_file = os.path.join(self.annot_dir, album_dir, f"{filename}.BEAT.TXT")
+                self.annot_files.append(annot_file)
+            elif self.dataset == "gtzan":
+                annot_file = os.path.join(self.annot_dir, f"{filename}.wav.txt")
+                self.annot_files.append(annot_file)
+            elif self.dataset == "smc":
+                annot_filepath = os.path.join(self.annot_dir, f"{filename}*.txt")
+                annot_file = glob.glob(annot_filepath)[0]
+                self.annot_files.append(annot_file)
+
+        self.data = [] # when preloading store audio data and metadata
+        if self.preload:
+            for audio_filename, annot_filename in tqdm(zip(self.audio_files, self.annot_files), 
+                                                        total=len(self.audio_files), 
+                                                        ncols=80):
+                    audio, target, metadata = self.load_data(audio_filename, annot_filename)
+                    if self.half:
+                        audio = audio.half()
+                        target = target.half()
+                    self.data.append((audio, target, metadata))
 
     def __len__(self):
-        return len(self.image_names)
+        if self.subset in ["test", "val", "full-val", "full-test"]:
+            length = len(self.audio_files)
+        else:
+            length = self.examples_per_epoch
+        return length
 
     def __getitem__(self, idx):
 
-        img = self.load_image(idx)
-        annot = self.load_annotations(idx)
-        sample = {'img': img, 'annot': annot}
-        if self.transform:
-            sample = self.transform(sample)
+        if self.preload:
+            audio, target, metadata = self.data[idx % len(self.audio_files)]
+        else:
+            # get metadata of example
+            audio_filename = self.audio_files[idx % len(self.audio_files)]
+            annot_filename = self.annot_files[idx % len(self.audio_files)]
+            audio, target, metadata = self.load_data(audio_filename, annot_filename)
 
-        return sample
+        # do all processing in float32 not float16
+        audio = audio.float()
+        target = target.float()
 
-    def load_image(self, image_index):
-        img = skimage.io.imread(self.image_names[image_index])
-
-        if len(img.shape) == 2:
-            img = skimage.color.gray2rgb(img)
-
-        return img.astype(np.float32)/255.0
-
-    def load_annotations(self, image_index):
-        # get ground truth annotations
-        annotation_list = self.image_data[self.image_names[image_index]]
-        annotations     = np.zeros((0, 5))
-
-        # some images appear to miss annotations (like image with id 257034)
-        if len(annotation_list) == 0:
-            return annotations
-
-        # parse annotations
-        for idx, a in enumerate(annotation_list):
-            # some annotations have basically no width / height, skip them
-            x1 = a['x1']
-            x2 = a['x2']
-            y1 = a['y1']
-            y2 = a['y2']
-
-            if (x2-x1) < 1 or (y2-y1) < 1:
-                continue
-
-            annotation        = np.zeros((1, 5))
-            
-            annotation[0, 0] = x1
-            annotation[0, 1] = y1
-            annotation[0, 2] = x2
-            annotation[0, 3] = y2
-
-            annotation[0, 4]  = self.name_to_label(a['class'])
-            annotations       = np.append(annotations, annotation, axis=0)
-
-        return annotations
-
-    def _read_annotations(self, csv_reader, classes):
-        result = {}
-        for line, row in enumerate(csv_reader):
-            line += 1
-
+        # apply augmentations 
+        if self.augment: 
             try:
-                img_file, x1, y1, x2, y2, class_name = row[:6]
-            except ValueError:
-                raise_from(ValueError('line {}: format should be \'img_file,x1,y1,x2,y2,class_name\' or \'img_file,,,,,\''.format(line)), None)
+                audio, target = self.apply_augmentations(audio, target)
+            except:
+                print("Error with augmentations")
+                print(metadata)
 
-            if img_file not in result:
-                result[img_file] = []
+        N_audio = audio.shape[-1]   # audio samples
+        N_target = target.shape[-1] # target samples
 
-            # If a row contains only an image path, it's an image without annotations.
-            if (x1, y1, x2, y2, class_name) == ('', '', '', '', ''):
-                continue
+        # random crop of the audio and target if larger than desired
+        if (N_audio > self.length or N_target > self.target_length) and self.subset not in ['val', 'test', 'full-val']:
+            audio_start = np.random.randint(0, N_audio - self.length - 1)
+            audio_stop  = audio_start + self.length
+            target_start = int(audio_start / self.target_factor)
+            target_stop = int(audio_stop / self.target_factor)
+            audio = audio[:,audio_start:audio_stop]
+            target = target[:,target_start:target_stop]
 
-            x1 = self._parse(x1, int, 'line {}: malformed x1: {{}}'.format(line))
-            y1 = self._parse(y1, int, 'line {}: malformed y1: {{}}'.format(line))
-            x2 = self._parse(x2, int, 'line {}: malformed x2: {{}}'.format(line))
-            y2 = self._parse(y2, int, 'line {}: malformed y2: {{}}'.format(line))
+        # pad the audio and target is shorter than desired
+        if audio.shape[-1] < self.length and self.subset not in ['val', 'test', 'full-val']: 
+            pad_size = self.length - audio.shape[-1]
+            padl = pad_size - (pad_size // 2)
+            padr = pad_size // 2
+            audio = torch.nn.functional.pad(audio, 
+                                            (padl, padr), 
+                                            mode=self.pad_mode)
+        if target.shape[-1] < self.target_length and self.subset not in ['val', 'test', 'full-val']: 
+            pad_size = self.target_length - target.shape[-1]
+            padl = pad_size - (pad_size // 2)
+            padr = pad_size // 2
+            target = torch.nn.functional.pad(target, 
+                                             (padl, padr), 
+                                             mode=self.pad_mode)
 
-            # Check that the bounding box is valid.
-            if x2 <= x1:
-                raise ValueError('line {}: x2 ({}) must be higher than x1 ({})'.format(line, x2, x1))
-            if y2 <= y1:
-                raise ValueError('line {}: y2 ({}) must be higher than y1 ({})'.format(line, y2, y1))
+        if self.subset in ["train", "full-train"]:
+            return audio, target
+        elif self.subset in ["val", "test", "full-val"]:
+            # this will only work with batch size = 1
+            return audio, target, metadata
+        else:
+            raise RuntimeError(f"Invalid subset: `{self.subset}`")
 
-            # check if the current class name is correctly present
-            if class_name not in classes:
-                raise ValueError('line {}: unknown class name: \'{}\' (classes: {})'.format(line, class_name, classes))
+    def load_data(self, audio_filename, annot_filename):
+        # first load the audio file
+        audio, sr = torchaudio.load(audio_filename)
+        audio = audio.float()
 
-            result[img_file].append({'x1': x1, 'x2': x2, 'y1': y1, 'y2': y2, 'class': class_name})
-        return result
+        # resample if needed
+        if sr != self.audio_sample_rate:
+            audio = julius.resample_frac(audio, sr, self.audio_sample_rate)   
 
-    def name_to_label(self, name):
-        return self.classes[name]
+        # convert to mono
+        if len(audio) == 2:
+            print("WARNING: Audio is not mono")
+            audio = torch.mean(audio, dim=0).unsqueeze(0)
 
-    def label_to_name(self, label):
-        return self.labels[label]
+        # normalize all audio inputs -1 to 1
+        audio /= audio.abs().max()
 
-    def num_classes(self):
-        return max(self.classes.values()) + 1
+        # now get the annotation information
+        annot = self.load_annot(annot_filename)
+        beat_samples, downbeat_samples, beat_indices, time_signature = annot
+        #print(1, len(beat_samples), len(downbeat_samples))
 
-    def image_aspect_ratio(self, image_index):
-        image = Image.open(self.image_names[image_index])
-        return float(image.width) / float(image.height)
+        # get metadata
+        genre = os.path.basename(os.path.dirname(audio_filename))
 
+        # convert beat_samples to beat_seconds
+        beat_sec = np.array(beat_samples) / self.audio_sample_rate
+        downbeat_sec = np.array(downbeat_samples) / self.audio_sample_rate
+        #print(2, beat_sec, len(beat_sec), len(downbeat_sec))
 
-def collater(data):
+        t = audio.shape[-1]/self.audio_sample_rate # audio length in sec
+        N = int(t * self.target_sample_rate) + 1   # target length in samples
+        target = torch.zeros(3, N)
 
-    imgs = [s['img'] for s in data]
-    annots = [s['annot'] for s in data]
-    scales = [s['scale'] for s in data]
+        # now convert from seconds to new sample rate
+        beat_samples = np.array(beat_sec * self.target_sample_rate)
+        downbeat_samples = np.array(downbeat_sec * self.target_sample_rate)
+        #print(3, beat_samples, len(beat_samples))
+
+        # check if there are any beats beyond the file end
+        beat_samples = beat_samples[beat_samples < N]
+        downbeat_samples = downbeat_samples[downbeat_samples < N]
+
+        beat_samples = beat_samples.astype(int)
+        downbeat_samples = downbeat_samples.astype(int)
+
+        beats_as_ones = torch.zeros(N).index_fill(0, torch.LongTensor(beat_samples), 1)
+        beat_sec = torch.tensor(beat_sec, dtype=torch.float)
+
+        target[0, beat_samples] = 1  # first channel is beats
+        target[1, downbeat_samples] = 1  # second channel is downbeat
+        target[2, :] = torch.where(
+            beats_as_ones != 0,
+            beat_sec[beats_as_ones.cumsum(dim=0, dtype=torch.long) - 1],
+            torch.zeros(N, dtype=torch.float)
+        )
+
+        metadata = {
+            "Filename" : audio_filename,
+            "Genre" : genre,
+            "Time signature" : time_signature
+        }
+
+        return audio, target, metadata
+
+    def load_annot(self, filename):
+
+        with open(filename, 'r') as fp:
+            lines = fp.readlines()
         
-    widths = [int(s.shape[0]) for s in imgs]
-    heights = [int(s.shape[1]) for s in imgs]
-    batch_size = len(imgs)
+        beat_samples = [] # array of samples containing beats
+        downbeat_samples = [] # array of samples containing downbeats (1)
+        beat_indices = [] # array of beat type one-hot encoded  
+        time_signature = None # estimated time signature (only 3/4 or 4/4)
 
-    max_width = np.array(widths).max()
-    max_height = np.array(heights).max()
+        for line in lines:
+            if self.dataset == "ballroom":
+                line = line.strip('\n')
+                line = line.replace('\t', ' ')
+                time_sec, beat = line.split(' ')
+            elif self.dataset == "beatles":
+                line = line.strip('\n')
+                line = line.replace('\t', ' ')
+                line = line.replace('  ', ' ')
+                time_sec, beat = line.split(' ')
+            elif self.dataset == "hainsworth":
+                line = line.strip('\n')
+                time_sec, beat = line.split(' ')
+            elif self.dataset == "rwc_popular":
+                line = line.strip('\n')
+                line = line.split('\t')
+                time_sec = int(line[0]) / 100.0
+                beat = 1 if int(line[2]) == 384 else 2
+            elif self.dataset == "gtzan":
+                line = line.strip('\n')
+                time_sec, beat = line.split(' ')
+            elif self.dataset == "smc":
+                line = line.strip('\n')
+                time_sec = line
+                beat = 1
 
-    padded_imgs = torch.zeros(batch_size, max_width, max_height, 3)
+            # convert beat to one-hot
+            beat = int(beat)
+            if beat == 1:
+                beat_one_hot = [1,0,0,0]
+            elif beat == 2:
+                beat_one_hot = [0,1,0,0]
+            elif beat == 3:
+                beat_one_hot = [0,0,1,0]    
+            elif beat == 4:
+                beat_one_hot = [0,0,0,1]
 
-    for i in range(batch_size):
-        img = imgs[i]
-        padded_imgs[i, :int(img.shape[0]), :int(img.shape[1]), :] = img
+            # convert seconds to samples
+            beat_time_samples = int(float(time_sec) * (self.audio_sample_rate))
 
-    max_num_annots = max(annot.shape[0] for annot in annots)
-    
-    if max_num_annots > 0:
+            beat_samples.append(beat_time_samples)
+            beat_indices.append(beat)
 
-        annot_padded = torch.ones((len(annots), max_num_annots, 5)) * -1
+            if beat == 1:
+                downbeat_time_samples = int(float(time_sec) * (self.audio_sample_rate))
+                downbeat_samples.append(downbeat_time_samples)
 
-        if max_num_annots > 0:
-            for idx, annot in enumerate(annots):
-                #print(annot.shape)
-                if annot.shape[0] > 0:
-                    annot_padded[idx, :annot.shape[0], :] = annot
-    else:
-        annot_padded = torch.ones((len(annots), 1, 5)) * -1
+        # guess at the time signature
+        if np.max(beat_indices) == 2:
+            time_signature = "2/4"
+        elif np.max(beat_indices) == 3:
+            time_signature = "3/4"
+        elif np.max(beat_indices) == 4:
+            time_signature = "4/4"
+        else:
+            time_signature = "?"
 
+        return beat_samples, downbeat_samples, beat_indices, time_signature
 
-    padded_imgs = padded_imgs.permute(0, 3, 1, 2)
+    def apply_augmentations(self, audio, target):
 
-    return {'img': padded_imgs, 'annot': annot_padded, 'scale': scales}
+        # random gain from 0dB to -6 dB
+        #if np.random.rand() < 0.2:      
+        #    #sgn = np.random.choice([-1,1])
+        #    audio = audio * (10**((-1 * np.random.rand() * 6)/20))   
 
-class Resizer(object):
-    """Convert ndarrays in sample to Tensors."""
+        # phase inversion
+        if np.random.rand() < 0.5:      
+            audio = -audio                              
 
-    def __call__(self, sample, min_side=608, max_side=1024):
-        image, annots = sample['img'], sample['annot']
+        # drop continguous frames
+        if np.random.rand() < 0.05:     
+            zero_size = int(self.length*0.1)
+            start = np.random.randint(audio.shape[-1] - zero_size - 1)
+            stop = start + zero_size
+            audio[:,start:stop] = 0
+            target[:,start:stop] = 0
 
-        rows, cols, cns = image.shape
+        # apply time stretching
+        if np.random.rand() < 0.0:
+            factor = np.random.normal(1.0, 0.5)  
+            factor = np.clip(factor, a_min=0.6, a_max=1.8)
 
-        smallest_side = min(rows, cols)
+            tfm = sox.Transformer()        
 
-        # rescale the image so the smallest side is min_side
-        scale = min_side / smallest_side
+            if abs(factor - 1.0) <= 0.1: # use stretch
+                tfm.stretch(1/factor)
+            else:   # use tempo
+                tfm.tempo(factor, 'm')
 
-        # check if the largest side is now greater than max_side, which can happen
-        # when images have a large aspect ratio
-        largest_side = max(rows, cols)
+            audio = tfm.build_array(input_array=audio.squeeze().numpy(), 
+                                    sample_rate_in=self.audio_sample_rate)
+            audio = torch.from_numpy(audio.astype('float32')).view(1,-1)
 
-        if largest_side * scale > max_side:
-            scale = max_side / largest_side
+            # now we update the targets based on new tempo
+            dbeat_ind = (target[1,:] == 1).nonzero(as_tuple=False)
+            dbeat_sec = dbeat_ind / self.target_sample_rate
+            new_dbeat_sec = (dbeat_sec / factor).squeeze()
+            new_dbeat_ind = (new_dbeat_sec * self.target_sample_rate).long()
 
-        # resize the image with the computed scale
-        image = skimage.transform.resize(image, (int(round(rows*scale)), int(round((cols*scale)))))
-        rows, cols, cns = image.shape
+            beat_ind = (target[0,:] == 1).nonzero(as_tuple=False)
+            beat_sec = beat_ind / self.target_sample_rate
+            new_beat_sec = (beat_sec / factor).squeeze()
+            new_beat_ind = (new_beat_sec * self.target_sample_rate).long()
 
-        pad_w = 32 - rows%32
-        pad_h = 32 - cols%32
-
-        new_image = np.zeros((rows + pad_w, cols + pad_h, cns)).astype(np.float32)
-        new_image[:rows, :cols, :] = image.astype(np.float32)
-
-        annots[:, :4] *= scale
-
-        return {'img': torch.from_numpy(new_image), 'annot': torch.from_numpy(annots), 'scale': scale}
-
-
-class Augmenter(object):
-    """Convert ndarrays in sample to Tensors."""
-
-    def __call__(self, sample, flip_x=0.5):
-
-        if np.random.rand() < flip_x:
-            image, annots = sample['img'], sample['annot']
-            image = image[:, ::-1, :]
-
-            rows, cols, channels = image.shape
-
-            x1 = annots[:, 0].copy()
-            x2 = annots[:, 2].copy()
+            # now convert indices back to target vector
+            new_size = int(np.ceil(target.shape[-1] / factor))
+            streteched_target = torch.zeros(3, new_size)
+            streteched_target[0, new_beat_ind] = 1
+            streteched_target[1, new_dbeat_ind] = 1
+            #streteched_target[2, :] = torch.where(
+            #    streteched_target[0, :] != 0,
+            #    beat_sec[streteched_target[0, :].cumsum(dim=0, dtype=torch.long) - 1],
+            #    torch.zeros(N, dtype=torch.float)
+            #)
             
-            x_tmp = x1.copy()
+            #streteched_target[2, :] = target
+            target = streteched_target
 
-            annots[:, 0] = cols - x2
-            annots[:, 2] = cols - x_tmp
+        if np.random.rand() < 0.0:
+            # this is the old method (shift all beats)
+            max_shift = int(0.070 * self.target_sample_rate)
+            shift = np.random.randint(0, high=max_shift)
+            direction = np.random.choice([-1,1])
+            target = torch.roll(target, shift * direction)
 
-            sample = {'img': image, 'annot': annots}
+        # shift targets forward/back max 70ms
+        if np.random.rand() < 0.3:      
+            
+            # in this method we shift each beat and downbeat by a random amount
+            max_shift = int(0.045 * self.target_sample_rate)
 
-        return sample
+            beat_ind = torch.logical_and(target[0,:] == 1, target[1,:] != 1).nonzero(as_tuple=False) # all beats EXCEPT downbeats
+            dbeat_ind = (target[1,:] == 1).nonzero(as_tuple=False)
 
+            # shift just the downbeats
+            dbeat_shifts = torch.normal(0.0, max_shift/2, size=(1,dbeat_ind.shape[-1]))
+            dbeat_shift_sec = dbeat_shifts.long().squeeze() / self.target_sample_rate
+            dbeat_ind += dbeat_shifts.long()
 
-class Normalizer(object):
+            # now shift the non-downbeats 
+            beat_shifts = torch.normal(0.0, max_shift/2, size=(1,beat_ind.shape[-1]))
+            beat_shift_sec = beat_shifts.long().squeeze() / self.target_sample_rate
+            beat_ind += beat_shifts.long()
 
-    def __init__(self):
-        self.mean = np.array([[[0.485, 0.456, 0.406]]])
-        self.std = np.array([[[0.229, 0.224, 0.225]]])
+            # ensure we have no beats beyond max index
+            beat_ind = beat_ind[beat_ind < target.shape[-1]]
+            dbeat_ind = dbeat_ind[dbeat_ind < target.shape[-1]]
 
-    def __call__(self, sample):
+            beats_as_ones = torch.zeros(target.size(dim=1))
+            beats_as_ones[beat_ind.long()] = 1
+            beats_as_ones[dbeat_ind.long()] = 1
 
-        image, annots = sample['img'], sample['annot']
+            beat_sec = target[2, torch.nonzero(target[2, :], as_tuple=False)].squeeze()
+            #print(beat_sec.size(dim=0), beats_as_ones.sum().item() - 1)
+            beat_sec_with_zeros = torch.where(
+                beats_as_ones != 0,
+                beat_sec[(beats_as_ones.cumsum(dim=0, dtype=torch.long) - 1).clamp(max=beat_sec.size(dim=0) - 1)],
+                torch.zeros(beats_as_ones.size(dim=0), dtype=torch.float)
+            )
 
-        return {'img':((image.astype(np.float32)-self.mean)/self.std), 'annot': annots}
+            beat_sec_with_zeros[beat_ind] += beat_shift_sec
+            beat_sec_with_zeros[dbeat_ind] += dbeat_shift_sec
 
-class UnNormalizer(object):
-    def __init__(self, mean=None, std=None):
-        if mean == None:
-            self.mean = [0.485, 0.456, 0.406]
-        else:
-            self.mean = mean
-        if std == None:
-            self.std = [0.229, 0.224, 0.225]
-        else:
-            self.std = std
+            # now convert indices back to target vector
+            shifted_target = torch.zeros(3, target.shape[-1])
+            shifted_target[0, beat_ind] = 1
+            shifted_target[0, dbeat_ind] = 1 # set also downbeats on first channel
+            shifted_target[1, dbeat_ind] = 1
+            shifted_target[2, :] = beat_sec_with_zeros
 
-    def __call__(self, tensor):
-        """
-        Args:
-            tensor (Tensor): Tensor image of size (C, H, W) to be normalized.
-        Returns:
-            Tensor: Normalized image.
-        """
-        for t, m, s in zip(tensor, self.mean, self.std):
-            t.mul_(s).add_(m)
-        return tensor
+            target = shifted_target
 
+        # apply pitch shifting
+        if np.random.rand() < 0.5:
+            sgn = np.random.choice([-1,1])
+            factor = sgn * np.random.rand() * 8.0     
+            tfm = sox.Transformer()        
+            tfm.pitch(factor)
+            audio = tfm.build_array(input_array=audio.squeeze().numpy(), 
+                                    sample_rate_in=self.audio_sample_rate)
+            audio = torch.from_numpy(audio.astype('float32')).view(1,-1)
 
-class AspectRatioBasedSampler(Sampler):
+        # apply a lowpass filter
+        if np.random.rand() < 0.1:
+            cutoff = (np.random.rand() * 4000) + 4000
+            sos = scipy.signal.butter(2, 
+                                      cutoff, 
+                                      btype="lowpass", 
+                                      fs=self.audio_sample_rate, 
+                                      output='sos')
+            audio_filtered = scipy.signal.sosfilt(sos, audio.numpy())
+            audio = torch.from_numpy(audio_filtered.astype('float32'))
 
-    def __init__(self, data_source, batch_size, drop_last):
-        self.data_source = data_source
-        self.batch_size = batch_size
-        self.drop_last = drop_last
-        self.groups = self.group_images()
+        # apply a highpass filter
+        if np.random.rand() < 0.1:
+            cutoff = (np.random.rand() * 1000) + 20
+            sos = scipy.signal.butter(2, 
+                                      cutoff, 
+                                      btype="highpass", 
+                                      fs=self.audio_sample_rate, 
+                                      output='sos')
+            audio_filtered = scipy.signal.sosfilt(sos, audio.numpy())
+            audio = torch.from_numpy(audio_filtered.astype('float32'))
 
-    def __iter__(self):
-        random.shuffle(self.groups)
-        for group in self.groups:
-            yield group
+        # apply a chorus effect
+        if np.random.rand() < 0.05:
+            tfm = sox.Transformer()        
+            tfm.chorus()
+            audio = tfm.build_array(input_array=audio.squeeze().numpy(), 
+                                    sample_rate_in=self.audio_sample_rate)
+            audio = torch.from_numpy(audio.astype('float32')).view(1,-1)
 
-    def __len__(self):
-        if self.drop_last:
-            return len(self.data_source) // self.batch_size
-        else:
-            return (len(self.data_source) + self.batch_size - 1) // self.batch_size
+        # apply a compressor effect
+        if np.random.rand() < 0.15:
+            attack = (np.random.rand() * 0.300) + 0.005
+            release = (np.random.rand() * 1.000) + 0.3
+            tfm = sox.Transformer()        
+            tfm.compand(attack_time=attack, decay_time=release)
+            audio = tfm.build_array(input_array=audio.squeeze().numpy(), 
+                                    sample_rate_in=self.audio_sample_rate)
+            audio = torch.from_numpy(audio.astype('float32')).view(1,-1)
 
-    def group_images(self):
-        # determine the order of the images
-        order = list(range(len(self.data_source)))
-        order.sort(key=lambda x: self.data_source.image_aspect_ratio(x))
+        # apply an EQ effect
+        if np.random.rand() < 0.15:
+            freq = (np.random.rand() * 8000) + 60
+            q = (np.random.rand() * 7.0) + 0.1
+            g = np.random.normal(0.0, 6)  
+            tfm = sox.Transformer()        
+            tfm.equalizer(frequency=freq, width_q=q, gain_db=g)
+            audio = tfm.build_array(input_array=audio.squeeze().numpy(), 
+                                    sample_rate_in=self.audio_sample_rate)
+            audio = torch.from_numpy(audio.astype('float32')).view(1,-1)
 
-        # divide into groups, one group = one batch
-        return [[order[x % len(order)] for x in range(i, i + self.batch_size)] for i in range(0, len(order), self.batch_size)]
+        # add white noise
+        if np.random.rand() < 0.05:
+            wn = (torch.rand(audio.shape) * 2) - 1
+            g = 10**(-(np.random.rand() * 20) - 12)/20
+            audio = audio + (g * wn)
+
+        # apply nonlinear distortion 
+        if np.random.rand() < 0.2:   
+            g = 10**((np.random.rand() * 12)/20)   
+            audio = torch.tanh(audio)    
+        
+        # normalize the audio
+        audio /= audio.float().abs().max()
+
+        return audio, target

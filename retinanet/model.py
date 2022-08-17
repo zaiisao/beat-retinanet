@@ -6,6 +6,7 @@ from torchvision.ops import nms
 from retinanet.utils import BasicBlock, Bottleneck, BBoxTransform, ClipBoxes
 from retinanet.anchors import Anchors
 from retinanet import losses
+from retinanet.dstcn import dsTCNModel
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
@@ -19,7 +20,8 @@ model_urls = {
 class PyramidFeatures(nn.Module):
     def __init__(self, C3_size, C4_size, C5_size, feature_size=256):
         super(PyramidFeatures, self).__init__()
-
+        # torch.nn.Conv1d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1,
+        # bias=True, padding_mode='zeros', device=None, dtype=None)
         # upsample C5 to get P5 from the FPN paper
         self.P5_1 = nn.Conv1d(C5_size, feature_size, kernel_size=1, stride=1, padding=0)
         self.P5_upsampled = nn.Upsample(scale_factor=2, mode='nearest')
@@ -105,7 +107,7 @@ class RegressionModel(nn.Module):
 
 
 class ClassificationModel(nn.Module):
-    def __init__(self, num_features_in, num_anchors=9, num_classes=80, prior=0.01, feature_size=256):
+    def __init__(self, num_features_in, num_anchors=9, num_classes=2, prior=0.01, feature_size=256):
         super(ClassificationModel, self).__init__()
 
         self.num_classes = num_classes
@@ -145,20 +147,27 @@ class ClassificationModel(nn.Module):
         # out is B x C x L, with C = n_classes + n_anchors
         out1 = out.permute(0, 2, 1)
 
-        batch_size, width, height, channels = out1.shape
+        #batch_size, width, height, channels = out1.shape
+        batch_size, length, channels = out1.shape
 
-        out2 = out1.view(batch_size, width, height, self.num_anchors, self.num_classes)
+        #out2 = out1.view(batch_size, width, height, self.num_anchors, self.num_classes)
+        out2 = out1.view(batch_size, length, self.num_anchors, self.num_classes)
 
         return out2.contiguous().view(x.shape[0], -1, self.num_classes)
 
 
 class ResNet(nn.Module):
 
-    def __init__(self, num_classes, block, layers):
-        self.inplanes = 64
+    def __init__(self, block, layers, **kwargs):
+        #self.inplanes = 64
+        self.inplanes = 256
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv1d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        self.bn1 = nn.BatchNorm1d(64)
+
+        self.dstcn = dsTCNModel(**kwargs)
+
+        #self.conv1 = nn.Conv1d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        #self.conv1 = nn.Conv1d(256, 256, kernel_size=7, stride=1, padding=3, bias=False)
+        self.bn1 = nn.BatchNorm1d(256)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
@@ -178,7 +187,7 @@ class ResNet(nn.Module):
         self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
 
         self.regressionModel = RegressionModel(256)
-        self.classificationModel = ClassificationModel(256, num_classes=num_classes)
+        self.classificationModel = ClassificationModel(256)
 
         self.anchors = Anchors()
 
@@ -190,7 +199,7 @@ class ResNet(nn.Module):
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
+                n = m.kernel_size[0] * m.out_channels
                 m.weight.data.normal_(0, math.sqrt(2. / n))
             elif isinstance(m, nn.BatchNorm1d):
                 m.weight.data.fill_(1)
@@ -235,7 +244,10 @@ class ResNet(nn.Module):
         else:
             img_batch = inputs
 
-        x = self.conv1(img_batch)
+        x = self.dstcn(img_batch)
+
+        #x = self.conv1(x)
+
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)
@@ -298,56 +310,26 @@ class ResNet(nn.Module):
 
 
 
-def resnet18(num_classes, pretrained=False, **kwargs):
-    """Constructs a ResNet-18 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, BasicBlock, [2, 2, 2, 2], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet18'], model_dir='.'), strict=False)
-    return model
+def resnet18(**kwargs):
+    """Constructs a ResNet-18 model."""
+    return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
-def resnet34(num_classes, pretrained=False, **kwargs):
-    """Constructs a ResNet-34 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, BasicBlock, [3, 4, 6, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet34'], model_dir='.'), strict=False)
-    return model
+def resnet34(**kwargs):
+    """Constructs a ResNet-34 model."""
+    return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
 
 
-def resnet50(num_classes, pretrained=False, **kwargs):
-    """Constructs a ResNet-50 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, Bottleneck, [3, 4, 6, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet50'], model_dir='.'), strict=False)
-    return model
+def resnet50(**kwargs):
+    """Constructs a ResNet-50 model."""
+    return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
-def resnet101(num_classes, pretrained=False, **kwargs):
-    """Constructs a ResNet-101 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, Bottleneck, [3, 4, 23, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet101'], model_dir='.'), strict=False)
-    return model
+def resnet101(**kwargs):
+    """Constructs a ResNet-101 model."""
+    return ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
 
 
-def resnet152(num_classes, pretrained=False, **kwargs):
-    """Constructs a ResNet-152 model.
-    Args:
-        pretrained (bool): If True, returns a model pre-trained on ImageNet
-    """
-    model = ResNet(num_classes, Bottleneck, [3, 8, 36, 3], **kwargs)
-    if pretrained:
-        model.load_state_dict(model_zoo.load_url(model_urls['resnet152'], model_dir='.'), strict=False)
-    return model
+def resnet152(**kwargs):
+    """Constructs a ResNet-152 model."""
+    return ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)

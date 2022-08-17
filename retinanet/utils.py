@@ -5,7 +5,9 @@ import numpy as np
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    #return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+    #                 padding=1, bias=False)
+    return nn.Conv1d(in_planes, out_planes, kernel_size=3, stride=stride,
                      padding=1, bias=False)
 
 
@@ -15,10 +17,12 @@ class BasicBlock(nn.Module):
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
-        self.bn1 = nn.BatchNorm2d(planes)
+        #self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = nn.BatchNorm1d(planes)
         self.relu = nn.ReLU(inplace=True)
         self.conv2 = conv3x3(planes, planes)
-        self.bn2 = nn.BatchNorm2d(planes)
+        #self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = nn.BatchNorm1d(planes)
         self.downsample = downsample
         self.stride = stride
 
@@ -46,13 +50,20 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(Bottleneck, self).__init__()
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+        # self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        # self.bn1 = nn.BatchNorm2d(planes)
+        # self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+        #                        padding=1, bias=False)
+        # self.bn2 = nn.BatchNorm2d(planes)
+        # self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        # self.bn3 = nn.BatchNorm2d(planes * 4)
+        self.conv1 = nn.Conv1d(inplanes, planes, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm1d(planes)
+        self.conv2 = nn.Conv1d(planes, planes, kernel_size=3, stride=stride,
                                padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(planes * 4)
+        self.bn2 = nn.BatchNorm1d(planes)
+        self.conv3 = nn.Conv1d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = nn.BatchNorm1d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
         self.downsample = downsample
         self.stride = stride

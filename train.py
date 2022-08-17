@@ -3,13 +3,17 @@ import glob
 import torch
 import torchsummary
 import re
+import random
+import numpy as np
+import collections
 from itertools import product
-import pytorch_lightning as pl
 from argparse import ArgumentParser
+import traceback
+import sys
 
-from pytorch_lightning.callbacks import ModelCheckpoint
 from retinanet import model
 from retinanet.dataloader import BeatDataset
+from retinanet.dstcn import dsTCNModel
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"
@@ -43,29 +47,44 @@ parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--num_workers', type=int, default=0)
 parser.add_argument('--augment', action='store_true')
 parser.add_argument('--dry_run', action='store_true')
-
-checkpoint_callback = ModelCheckpoint(
-    verbose=True,
-    monitor='val_loss/Joint F-measure',
-    mode='max'
-)
-
-# add all the available trainer options to argparse
-parser = pl.Trainer.add_argparse_args(parser)
+parser.add_argument('--depth', default=50)
+parser.add_argument('--epochs', help='Number of epochs', type=int, default=100)
+parser.add_argument('--lr', type=float, default=1e-2)
+parser.add_argument('--patience', type=int, default=40)
+# --- tcn model related ---
+parser.add_argument('--ninputs', type=int, default=1)
+parser.add_argument('--noutputs', type=int, default=2)
+parser.add_argument('--nblocks', type=int, default=8)
+parser.add_argument('--kernel_size', type=int, default=15)
+parser.add_argument('--stride', type=int, default=2)
+parser.add_argument('--dilation_growth', type=int, default=8)
+parser.add_argument('--channel_growth', type=int, default=1)
+parser.add_argument('--channel_width', type=int, default=32)
+parser.add_argument('--stack_size', type=int, default=4)
+parser.add_argument('--grouped', default=False, action='store_true')
+parser.add_argument('--causal', default=False, action="store_true")
+parser.add_argument('--skip_connections', default=False, action="store_true")
+parser.add_argument('--norm_type', type=str, default='BatchNorm')
+parser.add_argument('--act_type', type=str, default='PReLU')
 
 # THIS LINE IS KEY TO PULL THE MODEL NAME
 temp_args, _ = parser.parse_known_args()
 
-# let the model add what it wants
-parser = dsTCNModel.add_model_specific_args(parser)
-
 # parse them args
 args = parser.parse_args()
 
-datasets = ["ballroom", "hainsworth"]#["beatles", "ballroom", "hainsworth"]#, "rwc_popular"]
+datasets = ["ballroom"]
 
 # set the seed
-pl.seed_everything(42)
+seed = 42
+
+random.seed(seed)
+os.environ['PYTHONHASHSEED'] = str(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+torch.cuda.manual_seed(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = True
 
 #
 args.default_root_dir = os.path.join("lightning_logs", "full")
@@ -80,13 +99,6 @@ if len(state_dicts) > 0:
     print("loaded:" + checkpoint_path)
 else:
     print("no checkpoint found")
-
-# create the trainer
-trainer = pl.Trainer.from_argparse_args(
-    args,
-    checkpoint_callback=checkpoint_callback,
-    resume_from_checkpoint=checkpoint_path
-)
 
 # setup the dataloaders
 train_datasets = []
@@ -114,7 +126,7 @@ for dataset in datasets:
                                     subset="train",
                                     fraction=args.train_fraction,
                                     augment=args.augment,
-                                    half=True if args.precision == 16 else False,
+                                    half=True,
                                     preload=args.preload,
                                     length=args.train_length,
                                     dry_run=args.dry_run)
@@ -127,7 +139,7 @@ for dataset in datasets:
                                  target_factor=args.target_factor,
                                  subset="val",
                                  augment=False,
-                                 half=True if args.precision == 16 else False,
+                                 half=True,
                                  preload=args.preload,
                                  length=args.eval_length,
                                  dry_run=args.dry_run)
@@ -145,21 +157,98 @@ val_dataloader = torch.utils.data.DataLoader(val_dataset_list,
                                             shuffle=args.shuffle,
                                             batch_size=1,
                                             num_workers=args.num_workers,
-                                            pin_memory=False)    
+                                            pin_memory=False)
 
-# create the model with args
 dict_args = vars(args)
-dict_args["nparams"] = 2
-dict_args["target_sample_rate"] = args.audio_sample_rate / args.target_factor
-
-model = model(**dict_args)
-
-# summary 
-torchsummary.summary(model, [(1,args.train_length)], device="cpu")
 
 if __name__ == '__main__':
-    # train!
-    #for dl in train_dataloader:
-    #    print(dl[0].shape, dl[1].shape)
-    #raise ValueError
-    trainer.fit(model, train_dataloader, val_dataloader)
+    # Create the model
+    if args.depth == 18:
+        retinanet = model.resnet18(**dict_args)
+    elif args.depth == 34:
+        retinanet = model.resnet34(**dict_args)
+    elif args.depth == 50:
+        retinanet = model.resnet50(**dict_args)
+    elif args.depth == 101:
+        retinanet = model.resnet101(**dict_args)
+    elif args.depth == 152:
+        retinanet = model.resnet152(**dict_args)
+    else:
+        raise ValueError('Unsupported model depth, must be one of 18, 34, 50, 101, 152')
+
+    use_gpu = True
+
+    if use_gpu:
+        if torch.cuda.is_available():
+            retinanet = retinanet.cuda()
+
+    if torch.cuda.is_available():
+        retinanet = torch.nn.DataParallel(retinanet).cuda()
+    else:
+        retinanet = torch.nn.DataParallel(retinanet)
+
+    optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
+
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+
+    loss_hist = collections.deque(maxlen=500)
+
+    retinanet.train()
+    retinanet.module.freeze_bn()
+
+    print('Num training images: {}'.format(len(train_dataset_list)))
+
+    for epoch_num in range(args.epochs):
+        retinanet.train()
+        retinanet.module.freeze_bn()
+
+        epoch_loss = []
+
+        for iter_num, data in enumerate(train_dataloader):
+            audio, target = data
+
+            try:
+                optimizer.zero_grad()
+
+                classification_loss, regression_loss = retinanet(data)
+
+                print(classification_loss)
+    
+                classification_loss = classification_loss.mean()
+                regression_loss = regression_loss.mean()
+
+                loss = classification_loss + regression_loss
+
+                if bool(loss == 0):
+                    continue
+
+                loss.backward()
+
+                torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
+
+                optimizer.step()
+
+                loss_hist.append(float(loss))
+
+                epoch_loss.append(float(loss))
+
+                print(
+                    'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Running loss: {:1.5f}'.format(
+                        epoch_num, iter_num, float(classification_loss), float(regression_loss), np.mean(loss_hist)))
+
+                del classification_loss
+                del regression_loss
+            except KeyboardInterrupt:
+                sys.exit()
+            except Exception as e:
+                print(e)
+                traceback.print_exc()
+                continue
+
+        scheduler.step(np.mean(epoch_loss))
+
+        #torch.save(retinanet.module, '{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
+
+    retinanet.eval()
+
+    torch.save(retinanet, 'model_final.pt')

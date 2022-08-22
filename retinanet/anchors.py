@@ -27,7 +27,8 @@ class Anchors(nn.Module):
         image_shapes = [(image_shape + 2 ** x - 1) // (2 ** x) for x in self.pyramid_levels]
 
         # compute anchors over all pyramid levels
-        all_anchors = np.zeros((0, 4)).astype(np.float32)
+        #all_anchors = np.zeros((0, 4)).astype(np.float32)
+        all_anchors = np.zeros((0, 2)).astype(np.float32)
 
         for idx, p in enumerate(self.pyramid_levels):
             #anchors         = generate_anchors(base_size=self.sizes[idx], ratios=self.ratios, scales=self.scales)
@@ -111,7 +112,8 @@ def anchors_for_shape(
     image_shapes = compute_shape(image_shape, pyramid_levels)
 
     # compute anchors over all pyramid levels
-    all_anchors = np.zeros((0, 4))
+    #all_anchors = np.zeros((0, 4))
+    all_anchors = np.zeros((0, 2))
     for idx, p in enumerate(pyramid_levels):
         anchors         = generate_anchors(base_size=sizes[idx], ratios=ratios, scales=scales)
         shifted_anchors = shift(image_shapes[idx], strides[idx], anchors)
@@ -122,20 +124,21 @@ def anchors_for_shape(
 
 def shift(shape, stride, anchors):
     #shift_x = (np.arange(0, shape[1]) + 0.5) * stride
-    shift_x = (np.arange(0, shape[0]) + 0.5) * stride
     #shift_y = (np.arange(0, shape[0]) + 0.5) * stride
+    shift_x = (np.arange(0, shape[0]) + 0.5) * stride
+    #print("shift_x", shift_x, shift_x.shape)
 
     #shift_x, shift_y = np.meshgrid(shift_x, shift_y)
     #shift_x = np.meshgrid(shift_x)
-    #print(shift_x)
 
     # shifts = np.vstack((
     #    shift_x.ravel(), shift_y.ravel(),
     #    shift_x.ravel(), shift_y.ravel()
     # )).transpose()
-
-    shifts = np.vstack(shift_x).transpose()
-    print(shifts)
+    shifts = np.vstack((
+       shift_x.ravel(), shift_x.ravel()
+    )).transpose()
+    #print("shifts", shifts, shifts.shape)
 
     # add A anchors (1, A, 4) to
     # cell K shifts (K, 1, 4) to get
@@ -143,15 +146,11 @@ def shift(shape, stride, anchors):
     # reshape to (K*A, 4) shifted anchors
     A = anchors.shape[0]
     K = shifts.shape[0]
-    print("start")
-    print(anchors.shape)
-    print(shifts.shape)
-    #print("anchors", anchors, anchors.reshape((1, A, 4)))
-    #print("shifts", shifts)
-    #print("shifts reshape", shifts.reshape((1, K, 4)))
-    print("end")
-    all_anchors = (anchors.reshape((1, A, 4)) + shifts.reshape((1, K, 4)).transpose((1, 0, 2)))
-    all_anchors = all_anchors.reshape((K * A, 4))
+
+    # all_anchors = (anchors.reshape((1, A, 4)) + shifts.reshape((1, K, 4)).transpose((1, 0, 2)))
+    # all_anchors = all_anchors.reshape((K * A, 4))
+    all_anchors = (anchors.reshape((1, A, 2)) + shifts.reshape((1, K, 2)).transpose((1, 0, 2)))
+    all_anchors = all_anchors.reshape((K * A, 2))
 
     return all_anchors
 

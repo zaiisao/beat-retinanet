@@ -5,13 +5,15 @@ import torch.nn as nn
 def calc_iou(a, b):
     area = (b[:, 2] - b[:, 0]) #* (b[:, 3] - b[:, 1])
 
-    iw = torch.min(torch.unsqueeze(a[:, 2], dim=1), b[:, 2]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
+    #iw = torch.min(torch.unsqueeze(a[:, 2], dim=1), b[:, 2]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
+    iw = torch.min(torch.unsqueeze(a[:, 1], dim=1), b[:, 1]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
     #ih = torch.min(torch.unsqueeze(a[:, 3], dim=1), b[:, 3]) - torch.max(torch.unsqueeze(a[:, 1], 1), b[:, 1])
 
     iw = torch.clamp(iw, min=0)
     #ih = torch.clamp(ih, min=0)
 
-    ua = torch.unsqueeze(a[:, 2] - a[:, 0], dim=1) + area - iw #* ih
+    #ua = torch.unsqueeze(a[:, 2] - a[:, 0], dim=1) + area - iw * ih
+    ua = torch.unsqueeze(a[:, 1] - a[:, 0], dim=1) + area - iw
 
     ua = torch.clamp(ua, min=1e-8)
 
@@ -33,7 +35,8 @@ class FocalLoss(nn.Module):
 
         anchor = anchors[0, :, :]
 
-        anchor_widths  = anchor[:, 2] - anchor[:, 0]
+        #anchor_widths  = anchor[:, 2] - anchor[:, 0]
+        anchor_widths  = anchor[:, 1] - anchor[:, 0]
         #anchor_heights = anchor[:, 3] - anchor[:, 1]
         anchor_ctr_x   = anchor[:, 0] + 0.5 * anchor_widths
         #anchor_ctr_y   = anchor[:, 1] + 0.5 * anchor_heights
@@ -80,6 +83,7 @@ class FocalLoss(nn.Module):
                 continue
 
             IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :4]) # num_anchors x num_annotations
+            print(anchors.shape, bbox_annotation.shape, IoU.shape)
 
             IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
 

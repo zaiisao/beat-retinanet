@@ -86,6 +86,7 @@ class FocalLoss(nn.Module):
             print(anchors.shape, bbox_annotation.shape, IoU.shape)
 
             IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
+            print(IoU_max.shape, IoU_argmax.shape)
 
             #import pdb
             #pdb.set_trace()
@@ -96,6 +97,7 @@ class FocalLoss(nn.Module):
             if torch.cuda.is_available():
                 targets = targets.cuda()
 
+            print(targets.shape, IoU_max.shape)
             targets[torch.lt(IoU_max, 0.4), :] = 0
 
             positive_indices = torch.ge(IoU_max, 0.5)

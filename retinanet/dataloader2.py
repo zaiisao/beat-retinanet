@@ -164,19 +164,19 @@ class BeatDataset(torch.utils.data.Dataset):
             audio_filename = self.audio_files[idx % len(self.audio_files)]
             annot_filename = self.annot_files[idx % len(self.audio_files)]
             audio, target, metadata = self.load_data(audio_filename, annot_filename)
-
-        # do all processing in float32 not float16
-        audio = audio.float()
-        target = target.float()
-        print(1, torch.nonzero(target[0, :], as_tuple=True))
+        print(111, target[0, :].nonzero().squeeze())
         # apply augmentations 
-        if self.augment:
-            audio, target = self.apply_augmentations(audio, target)
-        print(2, torch.nonzero(target[0, :], as_tuple=True))
-
+        if self.augment: 
+            try:
+                audio, target = self.apply_augmentations(audio, target)
+            except:
+                print("Error with augmentations")
+                print(metadata)
+        print(222, target[0, :].nonzero().squeeze())
         N_audio = audio.shape[-1]   # audio samples
         N_target = target.shape[-1] # target samples
-
+        print(323, N_audio, self.length, N_target, self.target_length)
+        print("aaaa")
         # random crop of the audio and target if larger than desired
         if (N_audio > self.length or N_target > self.target_length) and self.subset not in ['val', 'test', 'full-val']:
             audio_start = np.random.randint(0, N_audio - self.length - 1)
@@ -185,8 +185,7 @@ class BeatDataset(torch.utils.data.Dataset):
             target_stop = int(audio_stop / self.target_factor)
             audio = audio[:,audio_start:audio_stop]
             target = target[:,target_start:target_stop]
-        print(3, torch.nonzero(target[0, :], as_tuple=True))
-
+        print("Bbb")
         # pad the audio and target is shorter than desired
         if audio.shape[-1] < self.length and self.subset not in ['val', 'test', 'full-val']: 
             pad_size = self.length - audio.shape[-1]
@@ -195,8 +194,7 @@ class BeatDataset(torch.utils.data.Dataset):
             audio = torch.nn.functional.pad(audio, 
                                             (padl, padr), 
                                             mode=self.pad_mode)
-        print(4, torch.nonzero(target[0, :], as_tuple=True))
-        print(4.5, target.shape[-1] < self.target_length)
+        print("Ccc")
         if target.shape[-1] < self.target_length and self.subset not in ['val', 'test', 'full-val']: 
             pad_size = self.target_length - target.shape[-1]
             padl = pad_size - (pad_size // 2)
@@ -204,17 +202,20 @@ class BeatDataset(torch.utils.data.Dataset):
             target = torch.nn.functional.pad(target, 
                                              (padl, padr), 
                                              mode=self.pad_mode)
-        print(5, torch.nonzero(target[0, :], as_tuple=True))
+        print(3, target[0, :].nonzero().squeeze())
+        raise ValueError
+        # if self.subset in ["train", "full-train"]:
+        #     return audio, target
+        # elif self.subset in ["val", "test", "full-val"]:
+        #     # this will only work with batch size = 1
+        #     return audio, target, metadata
+        # else:
+        #     raise RuntimeError(f"Invalid subset: `{self.subset}`")
 
-        annot = self.make_intervals(target)
+        #annot = 
 
-        if self.subset in ["train", "full-train"]:
-            return audio, annot
-        elif self.subset in ["val", "test", "full-val"]:
-            # this will only work with batch size = 1
-            return audio, annot, metadata
-        else:
-            raise RuntimeError(f"Invalid subset: `{self.subset}`")
+        #sample = {'audio': audio, 'annot':}
+        #return 
 
     def load_data(self, audio_filename, annot_filename):
         # first load the audio file
@@ -236,6 +237,7 @@ class BeatDataset(torch.utils.data.Dataset):
         # now get the annotation information
         annot = self.load_annot(annot_filename)
         beat_samples, downbeat_samples, beat_indices, time_signature = annot
+        #print(1, len(beat_samples), len(downbeat_samples))
 
         # get metadata
         genre = os.path.basename(os.path.dirname(audio_filename))
@@ -243,14 +245,17 @@ class BeatDataset(torch.utils.data.Dataset):
         # convert beat_samples to beat_seconds
         beat_sec = np.array(beat_samples) / self.audio_sample_rate
         downbeat_sec = np.array(downbeat_samples) / self.audio_sample_rate
+        #print(2, beat_sec, len(beat_sec), len(downbeat_sec))
 
         t = audio.shape[-1]/self.audio_sample_rate # audio length in sec
         N = int(t * self.target_sample_rate) + 1   # target length in samples
-        target = torch.zeros(2,N)
+        # target = torch.zeros(3, N)
+        target = torch.zeros(2, N)
 
         # now convert from seconds to new sample rate
         beat_samples = np.array(beat_sec * self.target_sample_rate)
         downbeat_samples = np.array(downbeat_sec * self.target_sample_rate)
+        #print(3, beat_samples, len(beat_samples))
 
         # check if there are any beats beyond the file end
         beat_samples = beat_samples[beat_samples < N]
@@ -259,8 +264,16 @@ class BeatDataset(torch.utils.data.Dataset):
         beat_samples = beat_samples.astype(int)
         downbeat_samples = downbeat_samples.astype(int)
 
-        target[0,beat_samples] = 1  # first channel is beats
-        target[1,downbeat_samples] = 1  # second channel is downbeats
+        # beats_as_ones = torch.zeros(N).index_fill(0, torch.LongTensor(beat_samples), 1)
+        # beat_sec = torch.tensor(beat_sec, dtype=torch.float)
+
+        target[0, beat_samples] = 1  # first channel is beats
+        target[1, downbeat_samples] = 1  # second channel is downbeat
+        # target[2, :] = torch.where(
+        #     beats_as_ones != 0,
+        #     beat_sec[beats_as_ones.cumsum(dim=0, dtype=torch.long) - 1],
+        #     torch.zeros(N, dtype=torch.float)
+        # )
 
         metadata = {
             "Filename" : audio_filename,
@@ -268,13 +281,16 @@ class BeatDataset(torch.utils.data.Dataset):
             "Time signature" : time_signature
         }
 
+        audio = audio.float()
+        target = target.float()
+
         return audio, target, metadata
 
     def load_annot(self, filename):
 
         with open(filename, 'r') as fp:
             lines = fp.readlines()
-
+        
         beat_samples = [] # array of samples containing beats
         downbeat_samples = [] # array of samples containing downbeats (1)
         beat_indices = [] # array of beat type one-hot encoded  
@@ -339,29 +355,6 @@ class BeatDataset(torch.utils.data.Dataset):
 
         return beat_samples, downbeat_samples, beat_indices, time_signature
 
-    def make_intervals(self, target):
-        print(torch.nonzero(target))
-        raise ValueError
-
-        # equivalent code in retinanet "load_annotations" function in dataloader
-        annotations = np.zeros((0, 5))
-
-        # some audio can miss annotations
-        # interval을 만드려면 한 리스트에 2개 이상이 있어야 함
-        if len(beat_sec) < 2 or len(downbeat_sec) < 2:
-            return annotations
-        
-        # parse annotations
-        for beat_index, current_beat_sec in enumerate(beat_sec[:-1]):
-            next_beat_sec = beat_sec[beat_index + 1]
-            annotation = np.zeros((1, 3))
-            annotation[0, 0] = current_beat_sec
-            annotation[0, 1] = next_beat_sec
-            annotation[0, 2] = 1
-            annotations = np.append(annotations, annotation, axis=0)
-
-        return annotations
-
     def apply_augmentations(self, audio, target):
 
         # random gain from 0dB to -6 dB
@@ -381,6 +374,54 @@ class BeatDataset(torch.utils.data.Dataset):
             audio[:,start:stop] = 0
             target[:,start:stop] = 0
 
+        # apply time stretching
+        if np.random.rand() < 0.0:
+            factor = np.random.normal(1.0, 0.5)  
+            factor = np.clip(factor, a_min=0.6, a_max=1.8)
+
+            tfm = sox.Transformer()        
+
+            if abs(factor - 1.0) <= 0.1: # use stretch
+                tfm.stretch(1/factor)
+            else:   # use tempo
+                tfm.tempo(factor, 'm')
+
+            audio = tfm.build_array(input_array=audio.squeeze().numpy(), 
+                                    sample_rate_in=self.audio_sample_rate)
+            audio = torch.from_numpy(audio.astype('float32')).view(1,-1)
+
+            # now we update the targets based on new tempo
+            dbeat_ind = (target[1,:] == 1).nonzero(as_tuple=False)
+            dbeat_sec = dbeat_ind / self.target_sample_rate
+            new_dbeat_sec = (dbeat_sec / factor).squeeze()
+            new_dbeat_ind = (new_dbeat_sec * self.target_sample_rate).long()
+
+            beat_ind = (target[0,:] == 1).nonzero(as_tuple=False)
+            beat_sec = beat_ind / self.target_sample_rate
+            new_beat_sec = (beat_sec / factor).squeeze()
+            new_beat_ind = (new_beat_sec * self.target_sample_rate).long()
+
+            # now convert indices back to target vector
+            new_size = int(np.ceil(target.shape[-1] / factor))
+            streteched_target = torch.zeros(3, new_size)
+            streteched_target[0, new_beat_ind] = 1
+            streteched_target[1, new_dbeat_ind] = 1
+            #streteched_target[2, :] = torch.where(
+            #    streteched_target[0, :] != 0,
+            #    beat_sec[streteched_target[0, :].cumsum(dim=0, dtype=torch.long) - 1],
+            #    torch.zeros(N, dtype=torch.float)
+            #)
+            
+            #streteched_target[2, :] = target
+            target = streteched_target
+
+        if np.random.rand() < 0.0:
+            # this is the old method (shift all beats)
+            max_shift = int(0.070 * self.target_sample_rate)
+            shift = np.random.randint(0, high=max_shift)
+            direction = np.random.choice([-1,1])
+            target = torch.roll(target, shift * direction)
+
         # shift targets forward/back max 70ms
         if np.random.rand() < 0.3:      
             
@@ -392,24 +433,42 @@ class BeatDataset(torch.utils.data.Dataset):
 
             # shift just the downbeats
             dbeat_shifts = torch.normal(0.0, max_shift/2, size=(1,dbeat_ind.shape[-1]))
+            dbeat_shift_sec = dbeat_shifts.long().squeeze() / self.target_sample_rate
             dbeat_ind += dbeat_shifts.long()
 
             # now shift the non-downbeats 
             beat_shifts = torch.normal(0.0, max_shift/2, size=(1,beat_ind.shape[-1]))
+            beat_shift_sec = beat_shifts.long().squeeze() / self.target_sample_rate
             beat_ind += beat_shifts.long()
 
             # ensure we have no beats beyond max index
             beat_ind = beat_ind[beat_ind < target.shape[-1]]
-            dbeat_ind = dbeat_ind[dbeat_ind < target.shape[-1]]  
+            dbeat_ind = dbeat_ind[dbeat_ind < target.shape[-1]]
+
+            beats_as_ones = torch.zeros(target.size(dim=1))
+            beats_as_ones[beat_ind.long()] = 1
+            beats_as_ones[dbeat_ind.long()] = 1
+
+            beat_sec = target[2, torch.nonzero(target[2, :], as_tuple=False)].squeeze()
+            #print(beat_sec.size(dim=0), beats_as_ones.sum().item() - 1)
+            beat_sec_with_zeros = torch.where(
+                beats_as_ones != 0,
+                beat_sec[(beats_as_ones.cumsum(dim=0, dtype=torch.long) - 1).clamp(max=beat_sec.size(dim=0) - 1)],
+                torch.zeros(beats_as_ones.size(dim=0), dtype=torch.float)
+            )
+
+            beat_sec_with_zeros[beat_ind] += beat_shift_sec
+            beat_sec_with_zeros[dbeat_ind] += dbeat_shift_sec
 
             # now convert indices back to target vector
-            shifted_target = torch.zeros(2,target.shape[-1])
-            shifted_target[0,beat_ind] = 1
-            shifted_target[0,dbeat_ind] = 1 # set also downbeats on first channel
-            shifted_target[1,dbeat_ind] = 1
+            shifted_target = torch.zeros(3, target.shape[-1])
+            shifted_target[0, beat_ind] = 1
+            shifted_target[0, dbeat_ind] = 1 # set also downbeats on first channel
+            shifted_target[1, dbeat_ind] = 1
+            shifted_target[2, :] = beat_sec_with_zeros
 
             target = shifted_target
-    
+
         # apply pitch shifting
         if np.random.rand() < 0.5:
             sgn = np.random.choice([-1,1])

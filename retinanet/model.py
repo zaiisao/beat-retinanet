@@ -1,3 +1,4 @@
+from multiprocessing.sharedctypes import Value
 import torch.nn as nn
 import torch
 import math
@@ -266,6 +267,8 @@ class ResNet(nn.Module):
         anchors = self.anchors(img_batch)
 
         if self.training:
+            print(annotations)
+            raise ValueError
             return self.focalLoss(classification, regression, anchors, annotations)
         else:
             transformed_anchors = self.regressBoxes(anchors, regression)

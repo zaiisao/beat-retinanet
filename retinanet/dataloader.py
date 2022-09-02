@@ -168,11 +168,10 @@ class BeatDataset(torch.utils.data.Dataset):
         # do all processing in float32 not float16
         audio = audio.float()
         target = target.float()
-        print(1, torch.nonzero(target[0, :], as_tuple=True))
+
         # apply augmentations 
         if self.augment:
             audio, target = self.apply_augmentations(audio, target)
-        print(2, torch.nonzero(target[0, :], as_tuple=True))
 
         N_audio = audio.shape[-1]   # audio samples
         N_target = target.shape[-1] # target samples
@@ -185,7 +184,6 @@ class BeatDataset(torch.utils.data.Dataset):
             target_stop = int(audio_stop / self.target_factor)
             audio = audio[:,audio_start:audio_stop]
             target = target[:,target_start:target_stop]
-        print(3, torch.nonzero(target[0, :], as_tuple=True))
 
         # pad the audio and target is shorter than desired
         if audio.shape[-1] < self.length and self.subset not in ['val', 'test', 'full-val']: 
@@ -195,8 +193,7 @@ class BeatDataset(torch.utils.data.Dataset):
             audio = torch.nn.functional.pad(audio, 
                                             (padl, padr), 
                                             mode=self.pad_mode)
-        print(4, torch.nonzero(target[0, :], as_tuple=True))
-        print(4.5, target.shape[-1] < self.target_length)
+
         if target.shape[-1] < self.target_length and self.subset not in ['val', 'test', 'full-val']: 
             pad_size = self.target_length - target.shape[-1]
             padl = pad_size - (pad_size // 2)
@@ -204,7 +201,6 @@ class BeatDataset(torch.utils.data.Dataset):
             target = torch.nn.functional.pad(target, 
                                              (padl, padr), 
                                              mode=self.pad_mode)
-        print(5, torch.nonzero(target[0, :], as_tuple=True))
 
         annot = self.make_intervals(target)
 
@@ -340,25 +336,33 @@ class BeatDataset(torch.utils.data.Dataset):
         return beat_samples, downbeat_samples, beat_indices, time_signature
 
     def make_intervals(self, target):
-        print(torch.nonzero(target))
-        raise ValueError
+        beat_samples = torch.nonzero(target[0, :]).squeeze()
+        downbeat_samples = torch.nonzero(target[1, :]).squeeze()
 
         # equivalent code in retinanet "load_annotations" function in dataloader
-        annotations = np.zeros((0, 5))
+        annotations = np.zeros((0, 3))
 
         # some audio can miss annotations
         # interval을 만드려면 한 리스트에 2개 이상이 있어야 함
-        if len(beat_sec) < 2 or len(downbeat_sec) < 2:
+        if beat_samples.size(dim=0) < 2 or downbeat_samples.size(dim=0) < 2:
             return annotations
         
         # parse annotations
-        for beat_index, current_beat_sec in enumerate(beat_sec[:-1]):
-            next_beat_sec = beat_sec[beat_index + 1]
-            annotation = np.zeros((1, 3))
-            annotation[0, 0] = current_beat_sec
-            annotation[0, 1] = next_beat_sec
-            annotation[0, 2] = 1
-            annotations = np.append(annotations, annotation, axis=0)
+        def make_interval_subset(samples, class_id):
+            intervals = np.zeros((0, 3))
+            for beat_index, current_beat_sec in enumerate(samples[:-1]):
+                next_beat_sec = samples[beat_index + 1]
+                interval = np.zeros((1, 3))
+                interval[0, 0] = current_beat_sec
+                interval[0, 1] = next_beat_sec
+                interval[0, 2] = class_id
+
+                intervals = np.append(intervals, interval, axis=0)
+
+            return intervals
+
+        annotations = np.append(annotations, make_interval_subset(beat_samples, 1), axis=0)
+        annotations = np.append(annotations, make_interval_subset(downbeat_samples, 2), axis=0)
 
         return annotations
 

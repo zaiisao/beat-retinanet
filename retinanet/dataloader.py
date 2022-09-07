@@ -11,6 +11,29 @@ import soxbindings as sox
 
 torchaudio.set_audio_backend("sox_io")
 
+def collater(data):
+    audios = [s[0] for s in data]
+    annots = [s[1] for s in data]
+
+    new_audios = torch.stack(audios)
+
+    max_num_annots = max(annot.shape[0] for annot in annots)
+    
+    if max_num_annots > 0:
+
+        new_annots = torch.ones((len(annots), max_num_annots, 3)) * -1
+
+        if max_num_annots > 0:
+            for idx, annot in enumerate(annots):
+                #print(annot.shape)
+                if annot.shape[0] > 0:
+                    new_annots[idx, :annot.shape[0], :] = annot
+    else:
+        new_annots = torch.ones((len(annots), 1, 3)) * -1
+
+    #return {'img': padded_imgs, 'annot': annot_padded, 'scale': scales}
+    return new_audios, new_annots
+
 class BeatDataset(torch.utils.data.Dataset):
     """ Downbeat Dataset. """
     def __init__(self, 
@@ -340,7 +363,7 @@ class BeatDataset(torch.utils.data.Dataset):
         downbeat_samples = torch.nonzero(target[1, :]).squeeze()
 
         # equivalent code in retinanet "load_annotations" function in dataloader
-        annotations = np.zeros((0, 3))
+        annotations = torch.zeros((0, 3))
 
         # some audio can miss annotations
         # interval을 만드려면 한 리스트에 2개 이상이 있어야 함
@@ -349,20 +372,23 @@ class BeatDataset(torch.utils.data.Dataset):
         
         # parse annotations
         def make_interval_subset(samples, class_id):
-            intervals = np.zeros((0, 3))
+            intervals = torch.zeros((0, 3))
             for beat_index, current_beat_sec in enumerate(samples[:-1]):
                 next_beat_sec = samples[beat_index + 1]
-                interval = np.zeros((1, 3))
+                interval = torch.zeros((1, 3))
                 interval[0, 0] = current_beat_sec
                 interval[0, 1] = next_beat_sec
                 interval[0, 2] = class_id
 
-                intervals = np.append(intervals, interval, axis=0)
+                intervals = torch.cat((intervals, interval), axis=0)
 
             return intervals
 
-        annotations = np.append(annotations, make_interval_subset(beat_samples, 1), axis=0)
-        annotations = np.append(annotations, make_interval_subset(downbeat_samples, 2), axis=0)
+        annotations = torch.cat((
+            annotations,
+            make_interval_subset(beat_samples, 1),
+            make_interval_subset(downbeat_samples, 2)
+        ), axis=0)
 
         return annotations
 

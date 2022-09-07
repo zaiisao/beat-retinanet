@@ -3,7 +3,8 @@ import torch
 import torch.nn as nn
 
 def calc_iou(a, b):
-    area = (b[:, 2] - b[:, 0]) #* (b[:, 3] - b[:, 1])
+    #area = (b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1])
+    area = b[:, 1] - b[:, 0]
 
     #iw = torch.min(torch.unsqueeze(a[:, 2], dim=1), b[:, 2]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
     iw = torch.min(torch.unsqueeze(a[:, 1], dim=1), b[:, 1]) - torch.max(torch.unsqueeze(a[:, 0], 1), b[:, 0])
@@ -47,7 +48,8 @@ class FocalLoss(nn.Module):
             regression = regressions[j, :, :]
 
             bbox_annotation = annotations[j, :, :]
-            bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1]
+            #bbox_annotation = bbox_annotation[bbox_annotation[:, 4] != -1]
+            bbox_annotation = bbox_annotation[bbox_annotation[:, 2] != -1]
 
             classification = torch.clamp(classification, 1e-4, 1.0 - 1e-4)
 
@@ -82,7 +84,9 @@ class FocalLoss(nn.Module):
 
                 continue
 
-            IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :4]) # num_anchors x num_annotations
+            #IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :4]) # num_anchors x num_annotations
+            print(anchors[0, :, :].shape, bbox_annotation[:, :2].shape)
+            IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
             print(anchors.shape, bbox_annotation.shape, IoU.shape)
 
             IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1

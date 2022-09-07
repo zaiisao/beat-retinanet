@@ -12,7 +12,7 @@ import traceback
 import sys
 
 from retinanet import model
-from retinanet.dataloader import BeatDataset
+from retinanet.dataloader import BeatDataset, collater
 from retinanet.dstcn import dsTCNModel
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -152,12 +152,14 @@ train_dataloader = torch.utils.data.DataLoader(train_dataset_list,
                                                 shuffle=args.shuffle,
                                                 batch_size=args.batch_size,
                                                 num_workers=args.num_workers,
-                                                pin_memory=True)
+                                                pin_memory=True,
+                                                collate_fn=collater)
 val_dataloader = torch.utils.data.DataLoader(val_dataset_list, 
                                             shuffle=args.shuffle,
                                             batch_size=1,
                                             num_workers=args.num_workers,
-                                            pin_memory=False)
+                                            pin_memory=False,
+                                            collate_fn=collater)
 
 dict_args = vars(args)
 

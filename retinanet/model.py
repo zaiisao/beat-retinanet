@@ -69,7 +69,7 @@ class PyramidFeatures(nn.Module):
 
 
 class RegressionModel(nn.Module):
-    def __init__(self, num_features_in, num_anchors=9, feature_size=256):
+    def __init__(self, num_features_in, num_anchors=3, feature_size=256):
         super(RegressionModel, self).__init__()
 
         self.conv1 = nn.Conv1d(num_features_in, feature_size, kernel_size=3, padding=1)
@@ -84,7 +84,8 @@ class RegressionModel(nn.Module):
         self.conv4 = nn.Conv1d(feature_size, feature_size, kernel_size=3, padding=1)
         self.act4 = nn.ReLU()
 
-        self.output = nn.Conv1d(feature_size, num_anchors * 4, kernel_size=3, padding=1)
+        #self.output = nn.Conv1d(feature_size, num_anchors * 4, kernel_size=3, padding=1)
+        self.output = nn.Conv1d(feature_size, num_anchors * 2, kernel_size=3, padding=1)
 
     def forward(self, x):
         out = self.conv1(x)
@@ -104,11 +105,12 @@ class RegressionModel(nn.Module):
         # out is B x C x L, with C = 2*num_anchors
         out = out.permute(0, 2, 1)
 
-        return out.contiguous().view(out.shape[0], -1, 4)
+        #return out.contiguous().view(out.shape[0], -1, 4)
+        return out.contiguous().view(out.shape[0], -1, 2)
 
 
 class ClassificationModel(nn.Module):
-    def __init__(self, num_features_in, num_anchors=9, num_classes=2, prior=0.01, feature_size=256):
+    def __init__(self, num_features_in, num_anchors=3, num_classes=2, prior=0.01, feature_size=256):
         super(ClassificationModel, self).__init__()
 
         self.num_classes = num_classes
@@ -167,7 +169,7 @@ class ResNet(nn.Module):
         self.dstcn = dsTCNModel(**kwargs)
 
         #self.conv1 = nn.Conv1d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        #self.conv1 = nn.Conv1d(256, 256, kernel_size=7, stride=1, padding=3, bias=False)
+        self.conv1 = nn.Conv1d(256, 256, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm1d(256)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
@@ -245,10 +247,9 @@ class ResNet(nn.Module):
         else:
             img_batch = inputs
 
-        x = self.dstcn(img_batch)
+        img_batch = self.dstcn(img_batch)
 
-        #x = self.conv1(x)
-
+        x = self.conv1(img_batch)
         x = self.bn1(x)
         x = self.relu(x)
         x = self.maxpool(x)

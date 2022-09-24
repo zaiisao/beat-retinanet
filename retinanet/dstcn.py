@@ -141,7 +141,6 @@ class dsTCNModel(torch.nn.Module):
 
     def forward(self, x):
         for block in self.blocks:
-            print(x.shape)
             x = block(x)
 
         return x

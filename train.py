@@ -73,7 +73,7 @@ temp_args, _ = parser.parse_known_args()
 # parse them args
 args = parser.parse_args()
 
-datasets = ["hainsworth"]
+datasets = ["ballroom"]
 
 # set the seed
 seed = 42
@@ -213,8 +213,6 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
                 classification_loss, regression_loss = retinanet(data)
-
-                print(classification_loss)
     
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()

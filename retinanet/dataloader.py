@@ -386,8 +386,8 @@ class BeatDataset(torch.utils.data.Dataset):
 
         annotations = torch.cat((
             annotations,
-            make_interval_subset(beat_samples, 1),
-            make_interval_subset(downbeat_samples, 2)
+            make_interval_subset(beat_samples, 0),
+            make_interval_subset(downbeat_samples, 1)
         ), axis=0)
 
         return annotations

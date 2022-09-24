@@ -60,15 +60,12 @@ def generate_anchors(base_size=16, scales=None):
     num_anchors = len(scales)
 
     # initialize output anchors
-    anchors = np.zeros((num_anchors, 4))
-    anchors2 = np.zeros((num_anchors, 2))
+    #anchors = np.zeros((num_anchors, 4))
+    anchors = np.zeros((num_anchors, 2))
 
     # scale base_size
     #anchors[:, 2:] = base_size * np.tile(scales, (2, len(ratios))).T
-    #print(base_size * np.tile(scales, (2, 1)).T)
-    #print(base_size * scales)
-    anchors[:, 2:] = base_size * np.tile(scales, (2, 1)).T
-    anchors2[:, 1] = base_size * scales.T
+    anchors[:, 1] = base_size * scales.T
 
     # compute areas of anchors
     #areas = anchors[:, 2] * anchors[:, 3]
@@ -78,14 +75,14 @@ def generate_anchors(base_size=16, scales=None):
     #anchors[:, 3] = anchors[:, 2] * np.repeat(ratios, len(scales))
 
     # transform from (x_ctr, y_ctr, w, h) -> (x1, y1, x2, y2)
-    anchors[:, 0::2] -= np.tile(anchors[:, 2] * 0.5, (2, 1)).T
-    anchors[:, 1::2] -= np.tile(anchors[:, 3] * 0.5, (2, 1)).T
+    #anchors[:, 0::2] -= np.tile(anchors[:, 2] * 0.5, (2, 1)).T
+    #anchors[:, 1::2] -= np.tile(anchors[:, 3] * 0.5, (2, 1)).T
 
     # transform from (x_ctr, w) -> (x1, x2)
-    anchors2[:, :] -= np.tile(anchors2[:, 1] * 0.5, (2, 1)).T
+    anchors[:, :] -= np.tile(anchors[:, 1] * 0.5, (2, 1)).T
 
     #return anchors
-    return anchors2
+    return anchors
 
 def compute_shape(image_shape, pyramid_levels):
     """Compute shapes based on pyramid levels.
@@ -126,7 +123,6 @@ def shift(shape, stride, anchors):
     #shift_x = (np.arange(0, shape[1]) + 0.5) * stride
     #shift_y = (np.arange(0, shape[0]) + 0.5) * stride
     shift_x = (np.arange(0, shape[0]) + 0.5) * stride
-    #print("shift_x", shift_x, shift_x.shape)
 
     #shift_x, shift_y = np.meshgrid(shift_x, shift_y)
     #shift_x = np.meshgrid(shift_x)
@@ -138,7 +134,6 @@ def shift(shape, stride, anchors):
     shifts = np.vstack((
        shift_x.ravel(), shift_x.ravel()
     )).transpose()
-    #print("shifts", shifts, shifts.shape)
 
     # add A anchors (1, A, 4) to
     # cell K shifts (K, 1, 4) to get

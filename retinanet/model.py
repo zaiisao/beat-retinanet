@@ -199,6 +199,7 @@ class ResNet(nn.Module):
         self.clipBoxes = ClipBoxes()
 
         self.focalLoss = losses.FocalLoss()
+        self.regressionLoss = losses.RegressionLoss()
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -268,7 +269,11 @@ class ResNet(nn.Module):
         anchors = self.anchors(img_batch)
 
         if self.training:
-            return self.focalLoss(classification, regression, anchors, annotations)
+            #return self.focalLoss(classification, regression, anchors, annotations)
+            focal_loss = self.focalLoss(classification, anchors, annotations)
+            regression_loss = self.regressionLoss(regression, anchors, annotations)
+
+            return focal_loss, regression_loss
         else:
             transformed_anchors = self.regressBoxes(anchors, regression)
             transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)

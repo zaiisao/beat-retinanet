@@ -35,7 +35,7 @@ class FocalLoss(nn.Module):
         classification_losses = []
         #regression_losses = []
 
-        anchor = anchors[0, :, :]
+        #anchor = anchors[0, :, :]
 
         # #anchor_widths  = anchor[:, 2] - anchor[:, 0]
         # anchor_widths  = anchor[:, 1] - anchor[:, 0]
@@ -110,6 +110,7 @@ class FocalLoss(nn.Module):
             targets[positive_indices, :] = 0
             #targets[positive_indices, assigned_annotations[positive_indices, 4].long()] = 1
             targets[positive_indices, assigned_annotations[positive_indices, 2].long()] = 1
+            print(targets.nonzero().shape)
 
             if torch.cuda.is_available():
                 alpha_factor = torch.ones(targets.shape).cuda() * alpha
@@ -121,6 +122,11 @@ class FocalLoss(nn.Module):
             focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
 
             bce = -(targets * torch.log(classification) + (1.0 - targets) * torch.log(1.0 - classification))
+            print(-(targets * torch.log(classification) * focal_weight).sum())
+            print(-((1.0 - targets) * torch.log(1.0 - classification) * focal_weight).sum())
+            print((bce * focal_weight).sum())
+            print(classification)
+            print("---")
 
             # cls_loss = focal_weight * torch.pow(bce, gamma)
             cls_loss = focal_weight * bce
@@ -219,24 +225,25 @@ class RegressionLoss(nn.Module):
 
             assigned_annotations = bbox_annotation[IoU_argmax, :]
 
-            if loss_type == "f1":
-                if positive_indices.sum() > 0:
-                    assigned_annotations = assigned_annotations[positive_indices, :]
+            if positive_indices.sum() > 0:
+                assigned_annotations = assigned_annotations[positive_indices, :]
 
-                    anchor_widths_pi = anchor_widths[positive_indices]
-                    #anchor_heights_pi = anchor_heights[positive_indices]
-                    anchor_ctr_x_pi = anchor_ctr_x[positive_indices]
-                    #anchor_ctr_y_pi = anchor_ctr_y[positive_indices]
+                anchor_widths_pi = anchor_widths[positive_indices]
+                #anchor_heights_pi = anchor_heights[positive_indices]
+                anchor_ctr_x_pi = anchor_ctr_x[positive_indices]
+                #anchor_ctr_y_pi = anchor_ctr_y[positive_indices]
 
-                    gt_widths  = assigned_annotations[:, 2] - assigned_annotations[:, 0]
-                    #gt_heights = assigned_annotations[:, 3] - assigned_annotations[:, 1]
-                    gt_ctr_x   = assigned_annotations[:, 0] + 0.5 * gt_widths
-                    #gt_ctr_y   = assigned_annotations[:, 1] + 0.5 * gt_heights
+                #gt_widths  = assigned_annotations[:, 2] - assigned_annotations[:, 0]
+                gt_widths  = assigned_annotations[:, 1] - assigned_annotations[:, 0]
+                #gt_heights = assigned_annotations[:, 3] - assigned_annotations[:, 1]
+                gt_ctr_x   = assigned_annotations[:, 0] + 0.5 * gt_widths
+                #gt_ctr_y   = assigned_annotations[:, 1] + 0.5 * gt_heights
 
-                    # clip widths to 1
-                    gt_widths  = torch.clamp(gt_widths, min=1)
-                    #gt_heights = torch.clamp(gt_heights, min=1)
+                # clip widths to 1
+                gt_widths  = torch.clamp(gt_widths, min=1)
+                #gt_heights = torch.clamp(gt_heights, min=1)
 
+                if loss_type == "f1":
                     targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
                     #targets_dy = (gt_ctr_y - anchor_ctr_y_pi) / anchor_heights_pi
                     targets_dw = torch.log(gt_widths / anchor_widths_pi)
@@ -259,11 +266,52 @@ class RegressionLoss(nn.Module):
                         0.5 * 9.0 * torch.pow(regression_diff, 2),
                         regression_diff - 0.5 / 9.0
                     )
-                    regression_losses.append(regression_loss.mean())
-                else:
-                    if torch.cuda.is_available():
-                        regression_losses.append(torch.tensor(0).float().cuda())
+                elif loss_type == "iou" or loss_type == "giou":
+                    # 1. For the predicted line B_p, ensuring  x_p_2 > x_p_1
+                    bl_prediction, _ = torch.sort(regression[positive_indices, :])
+                    bl_ground = assigned_annotations[:, :2]
+
+                    # 2. Calculating length of B_g: L_g = x_g_2 − x_g_1 (위에서 이미 정의한 gt_widths)
+                    bl_ground_lengths = gt_widths
+
+                    # 3. Calculating length of B_p: L_p = x̂_p_2 − x̂_p_1
+                    bl_prediction_lengths = bl_prediction[:, 1] - bl_prediction[:, 0]
+
+                    # 4. Calculating intersection I between B_p and B_g
+                    intersection_x1 = torch.max(bl_ground[:, 0], bl_prediction[:, 0])
+                    intersection_x2 = torch.min(bl_ground[:, 1], bl_prediction[:, 1])
+                    intersection = torch.where(
+                        intersection_x2 > intersection_x1,
+                        intersection_x2 - intersection_x1,
+                        torch.zeros(bl_ground.size(dim=0))
+                    )
+
+                    # 5. Finding the coordinate of smallest enclosing line B_c:
+                    coordinate_x1 = torch.min(bl_ground[:, 0], bl_prediction[:, 0])
+                    coordinate_x2 = torch.max(bl_ground[:, 1], bl_prediction[:, 1])
+
+                    # 6. Calculating length of B_c
+                    bl_coordinate = coordinate_x2 - coordinate_x1
+
+                    # 7. IoU (I / U), where U = L_p + L_g - I
+                    union = bl_prediction_lengths + bl_ground_lengths - intersection
+                    iou = intersection / union
+
+                    if loss_type == "iou":
+                        # 9a. L_IoU = 1 - IoU
+                        regression_loss = 1 - iou
                     else:
-                        regression_losses.append(torch.tensor(0).float())
+                        # 8. GIoU = IoU - (L_c - U)/L_c
+                        giou = iou - (bl_coordinate - union)/bl_coordinate
+
+                        # 9b. L_GIoU = 1 - GIoU
+                        regression_loss = 1 - giou
+
+                regression_losses.append(regression_loss.mean())
+            else:
+                if torch.cuda.is_available():
+                    regression_losses.append(torch.tensor(0).float().cuda())
+                else:
+                    regression_losses.append(torch.tensor(0).float())
 
         return torch.stack(regression_losses).mean(dim=0, keepdim=True)

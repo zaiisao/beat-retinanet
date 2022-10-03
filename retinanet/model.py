@@ -161,10 +161,12 @@ class ClassificationModel(nn.Module):
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, **kwargs):
+    def __init__(self, block, layers, fcos=True, **kwargs):
         #self.inplanes = 64
         self.inplanes = 256
         super(ResNet, self).__init__()
+
+        self.fcos = fcos
 
         self.dstcn = dsTCNModel(**kwargs)
 
@@ -189,17 +191,21 @@ class ResNet(nn.Module):
 
         self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
 
-        self.regressionModel = RegressionModel(256)
-        self.classificationModel = ClassificationModel(256)
+        num_anchors = 3
+        if fcos:
+            num_anchors = 1
 
-        self.anchors = Anchors()
+        self.classificationModel = ClassificationModel(256, num_anchors=num_anchors)
+        self.regressionModel = RegressionModel(256, num_anchors=num_anchors)
+
+        self.anchors = Anchors(fcos=fcos)
 
         self.regressBoxes = BBoxTransform()
 
         self.clipBoxes = ClipBoxes()
 
-        self.focalLoss = losses.FocalLoss()
-        self.regressionLoss = losses.RegressionLoss()
+        self.focalLoss = losses.FocalLoss(fcos=fcos)
+        self.regressionLoss = losses.RegressionLoss(fcos=fcos, loss_type="giou")
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):

@@ -359,25 +359,31 @@ class BeatDataset(torch.utils.data.Dataset):
         return beat_samples, downbeat_samples, beat_indices, time_signature
 
     def make_intervals(self, target):
-        beat_samples = torch.nonzero(target[0, :]).squeeze()
-        downbeat_samples = torch.nonzero(target[1, :]).squeeze()
+        beats = target[0, :]
+        downbeats = target[1, :]
+        non_downbeats = beats - downbeats
+
+        downbeat_locations = torch.nonzero(downbeats).squeeze()
+        non_downbeat_locations = torch.nonzero(non_downbeats).squeeze()
 
         # equivalent code in retinanet "load_annotations" function in dataloader
         annotations = torch.zeros((0, 3))
 
         # some audio can miss annotations
         # interval을 만드려면 한 리스트에 2개 이상이 있어야 함
-        if beat_samples.size(dim=0) < 2 or downbeat_samples.size(dim=0) < 2:
+        if downbeat_locations.size(dim=0) < 2 or non_downbeat_locations.size(dim=0) < 2:
             return annotations
         
         # parse annotations
         def make_interval_subset(samples, class_id):
             intervals = torch.zeros((0, 3))
-            for beat_index, current_beat_sec in enumerate(samples[:-1]):
-                next_beat_sec = samples[beat_index + 1]
+            for beat_index, current_beat_location in enumerate(samples[:-1]):
+                # next downbeat location 또는 next beat location
+                next_beat_location = samples[beat_index + 1]
+
                 interval = torch.zeros((1, 3))
-                interval[0, 0] = current_beat_sec
-                interval[0, 1] = next_beat_sec
+                interval[0, 0] = current_beat_location
+                interval[0, 1] = next_beat_location
                 interval[0, 2] = class_id
 
                 intervals = torch.cat((intervals, interval), axis=0)
@@ -386,8 +392,8 @@ class BeatDataset(torch.utils.data.Dataset):
 
         annotations = torch.cat((
             annotations,
-            make_interval_subset(beat_samples, 0),
-            make_interval_subset(downbeat_samples, 1)
+            make_interval_subset(downbeat_locations, 0),
+            make_interval_subset(non_downbeat_locations, 1)
         ), axis=0)
 
         return annotations

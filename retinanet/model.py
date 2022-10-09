@@ -69,7 +69,7 @@ class PyramidFeatures(nn.Module):
 
 
 class RegressionModel(nn.Module):
-    def __init__(self, num_features_in, num_anchors=3, feature_size=256):
+    def __init__(self, num_features_in, num_anchors=3, feature_size=256, fcos=False):
         super(RegressionModel, self).__init__()
 
         self.conv1 = nn.Conv1d(num_features_in, feature_size, kernel_size=3, padding=1)
@@ -85,7 +85,10 @@ class RegressionModel(nn.Module):
         self.act4 = nn.ReLU()
 
         #self.output = nn.Conv1d(feature_size, num_anchors * 4, kernel_size=3, padding=1)
-        self.output = nn.Conv1d(feature_size, num_anchors * 2, kernel_size=3, padding=1)
+        self.regression = nn.Conv1d(feature_size, num_anchors * 2, kernel_size=3, padding=1)
+        self.centerness = nn.Conv1d(feature_size, 1, kernel_size=3, padding=1)
+
+        self.fcos = fcos
 
     def forward(self, x):
         out = self.conv1(x)
@@ -100,14 +103,20 @@ class RegressionModel(nn.Module):
         out = self.conv4(out)
         out = self.act4(out)
 
-        out = self.output(out)
+        regression = self.regression(out)
 
-        # out is B x C x L, with C = 2*num_anchors
-        out = out.permute(0, 2, 1)
+        # regression is B x C x L, with C = 2*num_anchors
+        regression = regression.permute(0, 2, 1)
+        regression = regression.contiguous().view(regression.shape[0], -1, 2)
 
-        #return out.contiguous().view(out.shape[0], -1, 4)
-        return out.contiguous().view(out.shape[0], -1, 2)
+        if self.fcos:
+            centerness = self.centerness(out)
+            centerness = centerness.permute(0, 2, 1)
+            centerness = centerness.contiguous().view(centerness.shape[0], -1, 1)
 
+            return regression, centerness
+
+        return regression
 
 class ClassificationModel(nn.Module):
     def __init__(self, num_features_in, num_anchors=3, num_classes=2, prior=0.01, feature_size=256):
@@ -160,8 +169,7 @@ class ClassificationModel(nn.Module):
 
 
 class ResNet(nn.Module):
-
-    def __init__(self, block, layers, fcos=True, **kwargs):
+    def __init__(self, block, layers, fcos=False, **kwargs):
         #self.inplanes = 64
         self.inplanes = 256
         super(ResNet, self).__init__()
@@ -192,20 +200,21 @@ class ResNet(nn.Module):
         self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
 
         num_anchors = 3
-        if fcos:
+        if self.fcos:
             num_anchors = 1
 
         self.classificationModel = ClassificationModel(256, num_anchors=num_anchors)
-        self.regressionModel = RegressionModel(256, num_anchors=num_anchors)
+        self.regressionModel = RegressionModel(256, num_anchors=num_anchors, fcos=self.fcos)
 
-        self.anchors = Anchors(fcos=fcos)
+        self.anchors = Anchors(fcos=self.fcos)
 
         self.regressBoxes = BBoxTransform()
 
         self.clipBoxes = ClipBoxes()
 
-        self.focalLoss = losses.FocalLoss(fcos=fcos)
-        self.regressionLoss = losses.RegressionLoss(fcos=fcos, loss_type="giou")
+        self.focalLoss = losses.FocalLoss(fcos=self.fcos)
+        self.regressionLoss = losses.RegressionLoss(fcos=self.fcos, loss_type="giou")
+        self.centernessLoss = losses.CenternessLoss(fcos=self.fcos)
 
         for m in self.modules():
             if isinstance(m, nn.Conv1d):
@@ -220,8 +229,11 @@ class ResNet(nn.Module):
         self.classificationModel.output.weight.data.fill_(0)
         self.classificationModel.output.bias.data.fill_(-math.log((1.0 - prior) / prior))
 
-        self.regressionModel.output.weight.data.fill_(0)
-        self.regressionModel.output.bias.data.fill_(0)
+        self.regressionModel.regression.weight.data.fill_(0)
+        self.regressionModel.regression.bias.data.fill_(0)
+
+        self.regressionModel.centerness.weight.data.fill_(0)
+        self.regressionModel.centerness.bias.data.fill_(0)
 
         self.freeze_bn()
 
@@ -268,18 +280,59 @@ class ResNet(nn.Module):
 
         features = self.fpn([x2, x3, x4])
 
-        regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1)
+        if self.fcos:
+            classification = [self.classificationModel(feature) for feature in features]
+            regression = []
+            centerness = []
 
-        classification = torch.cat([self.classificationModel(feature) for feature in features], dim=1)
+            for feature in features:
+                feature_regression, feature_centerness = self.regressionModel(feature)
+                regression.append(feature_regression)
+                centerness.append(feature_centerness)
+        else:
+            classification = torch.cat([self.classificationModel(feature) for feature in features], dim=1)
+            regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1)
 
         anchors = self.anchors(img_batch)
 
         if self.training:
-            #return self.focalLoss(classification, regression, anchors, annotations)
-            focal_loss = self.focalLoss(classification, anchors, annotations)
-            regression_loss = self.regressionLoss(regression, anchors, annotations)
+            if self.fcos:
+                focal_losses, regression_losses, centerness_losses = [], [], []
+                regress_distances = [(0, 64), (64, 128), (128, 256), (256, 512), (512, float("inf"))]
 
-            return focal_loss, regression_loss
+                for feature_index in range(len(features)):
+                    focal_losses.append(self.focalLoss(
+                        classification[feature_index],
+                        anchors[feature_index],
+                        annotations,
+                        regress_distances[feature_index],
+                        centerness=centerness[feature_index]
+                    ))
+
+                    regression_losses.append(self.regressionLoss(
+                        regression[feature_index],
+                        anchors[feature_index],
+                        annotations,
+                        regress_distances[feature_index]
+                    ))
+
+                    centerness_losses.append(self.centernessLoss(
+                        centerness[feature_index],
+                        anchors[feature_index],
+                        annotations,
+                        regress_distances[feature_index]
+                    ))
+
+                focal_loss = torch.stack(focal_losses).mean(dim=0)
+                regression_loss = torch.stack(regression_losses).mean(dim=0)
+                centerness_loss = torch.stack(centerness_losses).mean(dim=0)
+
+                return focal_loss, regression_loss, centerness_loss
+            else:
+                focal_loss = self.focalLoss(classification, anchors, annotations)
+                regression_loss = self.regressionLoss(regression, anchors, annotations)
+
+                return focal_loss, regression_loss
         else:
             transformed_anchors = self.regressBoxes(anchors, regression)
             transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)

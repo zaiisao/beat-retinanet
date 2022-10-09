@@ -17,16 +17,46 @@ def calc_iou(a, b):
 
     return IoU
 
+def get_fcos_positives(lines, points, lower_limit, upper_limit):
+    # sort from shortest to longest
+    lines = lines[(lines[:, 1] - lines[:, 0]).argsort()]
+
+    points_in_lines = torch.logical_and(
+        torch.ge(torch.unsqueeze(points, dim=0), torch.unsqueeze(lines[:, 0], dim=1)),
+        torch.le(torch.unsqueeze(points, dim=0), torch.unsqueeze(lines[:, 1], dim=1))
+    )
+
+    left = torch.unsqueeze(points, dim=0) - torch.unsqueeze(lines[:, 0], dim=1)
+    right = torch.unsqueeze(lines[:, 1], dim=1) - torch.unsqueeze(points, dim=0)
+    
+    points_within_range = torch.logical_and(
+        torch.max(left, right) < upper_limit,
+        torch.max(left, right) >= lower_limit
+    )
+
+    positive_indices, positive_argmax = torch.logical_and(points_in_lines, points_within_range).max(dim=0)
+
+    assigned_annotations = lines[positive_argmax, :]
+
+    left = torch.diagonal(left[positive_argmax], 0)
+    right = torch.diagonal(right[positive_argmax], 0)
+
+    return positive_indices, assigned_annotations, left, right
+
 class FocalLoss(nn.Module):
     def __init__(self, fcos=False):
         super(FocalLoss, self).__init__()
         self.fcos = fcos
 
-    def forward(self, classifications, anchors, annotations):
+    def forward(self, classifications, anchors, annotations, limits=(0, float('inf')), centerness=None):
         alpha = 0.25
         gamma = 2.0
         batch_size = classifications.shape[0]
         classification_losses = []
+
+        if self.fcos:
+            assert torch.all(anchors[0, :, 0] == anchors[0, :, 1])
+            anchors = anchors[0, :, 0]
 
         for j in range(batch_size):
             classification = classifications[j, :, :]
@@ -70,15 +100,12 @@ class FocalLoss(nn.Module):
             if self.fcos:
                 targets[:, :] = 0
 
-                assert torch.all(anchors[0, :, 0] == anchors[0, :, 1])
-                anchors = anchors[0, :, 0]
-
-                positive_indices, positive_argmax = torch.logical_and(
-                    torch.ge(torch.unsqueeze(anchors, dim=0), torch.unsqueeze(bbox_annotation[:, 0], dim=1)),
-                    torch.le(torch.unsqueeze(anchors, dim=0), torch.unsqueeze(bbox_annotation[:, 1], dim=1))
-                ).max(dim=0)
-
-                assigned_annotations = bbox_annotation[positive_argmax, :]
+                positive_indices, assigned_annotations, _, _ = get_fcos_positives(
+                    bbox_annotation,
+                    anchors,
+                    limits[0],
+                    limits[1]
+                )
             else:
                 IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2])
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
@@ -121,7 +148,7 @@ class RegressionLoss(nn.Module):
         self.fcos = fcos
         self.loss_type = loss_type
 
-    def forward(self, regressions, anchors, annotations):
+    def forward(self, regressions, anchors, annotations, limits=(0, float('inf'))):
         batch_size = regressions.shape[0]
         regression_losses = []
 
@@ -129,6 +156,10 @@ class RegressionLoss(nn.Module):
 
         anchor_widths  = anchor[:, 1] - anchor[:, 0]
         anchor_ctr_x   = anchor[:, 0] + 0.5 * anchor_widths
+
+        if self.fcos:
+            assert torch.all(anchors[0, :, 0] == anchors[0, :, 1])
+            anchors = anchors[0, :, 0]
 
         for j in range(batch_size):
             regression = regressions[j, :, :]
@@ -145,22 +176,16 @@ class RegressionLoss(nn.Module):
                 continue
 
             if self.fcos:
-                assert torch.all(anchors[0, :, 0] == anchors[0, :, 1])
-                anchors = anchors[0, :, 0]
-
-                positive_indices, positive_argmax = torch.logical_and(
-                    torch.ge(torch.unsqueeze(anchors, dim=0), torch.unsqueeze(bbox_annotation[:, 0], dim=1)),
-                    torch.le(torch.unsqueeze(anchors, dim=0), torch.unsqueeze(bbox_annotation[:, 1], dim=1))
-                ).max(dim=0)
-
-                assigned_annotations = bbox_annotation[positive_argmax, :]
+                positive_indices, assigned_annotations, _, _ = get_fcos_positives(
+                    bbox_annotation,
+                    anchors,
+                    limits[0],
+                    limits[1]
+                )
             else:
                 IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
-
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
-
                 positive_indices = torch.ge(IoU_max, 0.5)
-
                 assigned_annotations = bbox_annotation[IoU_argmax, :]
 
             if positive_indices.sum() > 0:
@@ -245,3 +270,54 @@ class RegressionLoss(nn.Module):
                     regression_losses.append(torch.tensor(0).float())
 
         return torch.stack(regression_losses).mean(dim=0, keepdim=True)
+
+class CenternessLoss(nn.Module):
+    def __init__(self, fcos=False):
+        super(CenternessLoss, self).__init__()
+        self.fcos = fcos
+
+    def forward(self, centernesses, anchors, annotations, limits=(0, float('inf'))):
+        if not self.fcos:
+            raise NotImplementedError
+
+        batch_size = centernesses.shape[0]
+        centerness_losses = []
+
+        assert torch.all(anchors[0, :, 0] == anchors[0, :, 1])
+        anchors = anchors[0, :, 0]
+
+        for j in range(batch_size):
+            centerness = centernesses[j, :, :]
+
+            bbox_annotation = annotations[j, :, :]
+            bbox_annotation = bbox_annotation[bbox_annotation[:, 2] != -1]
+
+            centerness = torch.clamp(centerness, 1e-4, 1.0 - 1e-4)
+
+            #targets = torch.ones(centerness.shape) * -1
+
+            positive_indices, assigned_annotations, left, right = get_fcos_positives(
+                bbox_annotation,
+                anchors,
+                limits[0],
+                limits[1]
+            )
+
+            num_positive_anchors = positive_indices.sum()
+
+            targets = torch.where(
+                positive_indices,
+                torch.sqrt(torch.min(left, right) / torch.max(left, right)).float(),
+                torch.ones(positive_indices.shape) * -1
+            ).unsqueeze(dim=1)
+
+            bce = -(targets * torch.log(centerness) + (1.0 - targets) * torch.log(1.0 - centerness))
+
+            if torch.cuda.is_available():
+                ctr_loss = torch.where(torch.ne(targets, -1.0), bce, torch.zeros(bce.shape).cuda())
+            else:
+                ctr_loss = torch.where(torch.ne(targets, -1.0), bce, torch.zeros(bce.shape))
+
+            centerness_losses.append(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
+
+        return torch.stack(centerness_losses).mean(dim=0, keepdim=True)

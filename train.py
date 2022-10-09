@@ -66,6 +66,7 @@ parser.add_argument('--causal', default=False, action="store_true")
 parser.add_argument('--skip_connections', default=False, action="store_true")
 parser.add_argument('--norm_type', type=str, default='BatchNorm')
 parser.add_argument('--act_type', type=str, default='PReLU')
+parser.add_argument('--fcos', action='store_true')
 
 # THIS LINE IS KEY TO PULL THE MODEL NAME
 temp_args, _ = parser.parse_known_args()
@@ -212,12 +213,17 @@ if __name__ == '__main__':
             try:
                 optimizer.zero_grad()
 
-                classification_loss, regression_loss = retinanet(data)
+                if args.fcos:
+                    classification_loss, regression_loss, centerness_loss = retinanet(data)
+                else:
+                    classification_loss, regression_loss = retinanet(data)
+                    centerness_loss = torch.zeros(1)
     
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
+                centerness_loss = centerness_loss.mean()
 
-                loss = classification_loss + regression_loss
+                loss = classification_loss + regression_loss + centerness_loss
 
                 if bool(loss == 0):
                     continue
@@ -233,11 +239,12 @@ if __name__ == '__main__':
                 epoch_loss.append(float(loss))
 
                 print(
-                    'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Running loss: {:1.5f}'.format(
-                        epoch_num, iter_num, float(classification_loss), float(regression_loss), np.mean(loss_hist)))
+                    'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Centerness loss: {:1.5f} | Running loss: {:1.5f}'.format(
+                        epoch_num, iter_num, float(classification_loss), float(regression_loss), float(centerness_loss), np.mean(loss_hist)))
 
                 del classification_loss
                 del regression_loss
+                del centerness_loss
             except KeyboardInterrupt:
                 sys.exit()
             except Exception as e:

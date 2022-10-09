@@ -22,19 +22,29 @@ class Anchors(nn.Module):
         image_shape = np.array(image_shape)
         image_shapes = [(image_shape + 2 ** x - 1) // (2 ** x) for x in self.pyramid_levels]
 
-        all_anchors = np.zeros((0, 2)).astype(np.float32)
+        if self.fcos:
+            all_anchors = []
 
-        for idx, p in enumerate(self.pyramid_levels):
-            anchors         = generate_anchors(base_size=self.sizes[idx], scales=self.scales)
-            shifted_anchors = shift(image_shapes[idx], self.strides[idx], anchors)
-            all_anchors     = np.append(all_anchors, shifted_anchors, axis=0)
+            for idx, p in enumerate(self.pyramid_levels):
+                anchors = generate_anchors(base_size=self.sizes[idx], scales=self.scales)
+                shifted_anchors = np.expand_dims(shift(image_shapes[idx], self.strides[idx], anchors), axis=0)
+                all_anchors.append(torch.from_numpy(shifted_anchors))
 
-        all_anchors = np.expand_dims(all_anchors, axis=0)
-
-        if torch.cuda.is_available():
-            return torch.from_numpy(all_anchors.astype(np.float32)).cuda()
+            return all_anchors
         else:
-            return torch.from_numpy(all_anchors.astype(np.float32))
+            all_anchors = np.zeros((0, 2)).astype(np.float32)
+
+            for idx, p in enumerate(self.pyramid_levels):
+                anchors = generate_anchors(base_size=self.sizes[idx], scales=self.scales)
+                shifted_anchors = shift(image_shapes[idx], self.strides[idx], anchors)
+                all_anchors = np.append(all_anchors, shifted_anchors, axis=0)
+
+            all_anchors = np.expand_dims(all_anchors, axis=0)
+
+            if torch.cuda.is_available():
+                return torch.from_numpy(all_anchors.astype(np.float32)).cuda()
+            else:
+                return torch.from_numpy(all_anchors.astype(np.float32))
 
 #def generate_anchors(base_size=16, ratios=None, scales=None):
 def generate_anchors(base_size=16, scales=None):

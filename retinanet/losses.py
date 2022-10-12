@@ -128,21 +128,19 @@ class FocalLoss(nn.Module):
             targets[positive_indices, :] = 0
             targets[positive_indices, assigned_annotations[positive_indices, 2].long()] = 1
 
-            #print(limits, j, "cls", (targets != -1).nonzero()[:, 0])
-            #print(targets)
+            # if torch.cuda.is_available():
+            #     alpha_factor = torch.ones(targets.shape).cuda() * alpha
+            # else:
+            #     alpha_factor = torch.ones(targets.shape) * alpha
 
-            if torch.cuda.is_available():
-                alpha_factor = torch.ones(targets.shape).cuda() * alpha
-            else:
-                alpha_factor = torch.ones(targets.shape) * alpha
-
-            alpha_factor = torch.where(torch.eq(targets, 1.), alpha_factor, 1. - alpha_factor)
-            focal_weight = torch.where(torch.eq(targets, 1.), 1. - classification, classification)
-            focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+            # alpha_factor = torch.where(torch.eq(targets, 1.), alpha_factor, 1. - alpha_factor)
+            # focal_weight = torch.where(torch.eq(targets, 1.), 1. - classification, classification)
+            # focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
 
             bce = -(targets * torch.log(classification) + (1.0 - targets) * torch.log(1.0 - classification))
 
-            cls_loss = focal_weight * bce
+            #cls_loss = focal_weight * bce
+            cls_loss = bce
 
             if torch.cuda.is_available():
                 cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape).cuda())
@@ -304,8 +302,6 @@ class CenternessLoss(nn.Module):
             bbox_annotation = bbox_annotation[bbox_annotation[:, 2] != -1]
 
             centerness = torch.clamp(centerness, 1e-4, 1.0 - 1e-4)
-
-            #targets = torch.ones(centerness.shape) * -1
 
             positive_indices, assigned_annotations, left, right = get_fcos_positives(
                 bbox_annotation,

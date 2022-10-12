@@ -74,7 +74,7 @@ temp_args, _ = parser.parse_known_args()
 # parse them args
 args = parser.parse_args()
 
-datasets = ["ballroom"]
+datasets = ["ballroom", "hainsworth"]
 
 # set the seed
 seed = 42

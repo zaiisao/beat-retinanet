@@ -12,6 +12,7 @@ import soxbindings as sox
 torchaudio.set_audio_backend("sox_io")
 
 def collater(data):
+    # data = one batch of [audio, annot(, metadata)]
     audios = [s[0] for s in data]
     annots = [s[1] for s in data]
 
@@ -56,7 +57,7 @@ class BeatDataset(torch.utils.data.Dataset):
             audio_dir (str): Path to the root directory containing the audio (.wav) files.
             annot_dir (str): Path to the root directory containing the annotation (.beats) files.
             audio_sample_rate (float, optional): Sample rate of the audio files. (Default: 44100)
-            target_factor (float, optional): Sample rate of the audio files. (Default: 256)
+            target_factor (float, optional): The factor by which to downsample the sample rate of the audio to the final output tensor. (Default: 256)
             subset (str, optional): Pull data either from "train", "val", "test", or "full-train", "full-val" subsets. (Default: "train")
             dataset (str, optional): Name of the dataset to be loaded "ballroom", "beatles", "hainsworth", "rwc_popular", "gtzan", "smc". (Default: "ballroom")
             length (int, optional): Number of samples in the returned examples. (Default: 40)
@@ -88,6 +89,8 @@ class BeatDataset(torch.utils.data.Dataset):
         self.dataset = dataset
         self.examples_per_epoch = examples_per_epoch
 
+        # if length = 2097152 and target_factor is 256, target_length = 8192
+        # downsampling tcn's output tensor dimension is (b, 256, 8192) (b, channel, width/length)
         self.target_length = int(self.length / self.target_factor)
         #print(f"Audio length: {self.length}")
         #print(f"Target length: {self.target_length}")
@@ -244,7 +247,7 @@ class BeatDataset(torch.utils.data.Dataset):
         if sr != self.audio_sample_rate:
             audio = julius.resample_frac(audio, sr, self.audio_sample_rate)   
 
-        # convert to mono
+        # convert to mono by averaging the stereo; in_ch becomes 1
         if len(audio) == 2:
             print("WARNING: Audio is not mono")
             audio = torch.mean(audio, dim=0).unsqueeze(0)

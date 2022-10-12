@@ -18,6 +18,9 @@ def calc_iou(a, b):
     return IoU
 
 def get_fcos_positives(lines, points, lower_limit, upper_limit):
+    # points = anchors on feature map i
+    # lines = bbox_annotations
+
     # sort from shortest to longest
     lines = lines[(lines[:, 1] - lines[:, 0]).argsort()]
 
@@ -48,19 +51,26 @@ class FocalLoss(nn.Module):
         super(FocalLoss, self).__init__()
         self.fcos = fcos
 
-    def forward(self, classifications, anchors, annotations, limits=(0, float('inf')), centerness=None):
-        alpha = 0.25
-        gamma = 2.0
+    def forward(self, classifications, anchors, annotations, limits=(0, float('inf'))):
+        #alpha = 0.25
+        #gamma = 2.0
+        alpha = 1
+        gamma = 0
+
         batch_size = classifications.shape[0]
         classification_losses = []
 
         if self.fcos:
+            # anchors = (x, y) in feature map
             assert torch.all(anchors[0, :, 0] == anchors[0, :, 1])
             anchors = anchors[0, :, 0]
 
         for j in range(batch_size):
+            # j refers to an audio sample in batch
             classification = classifications[j, :, :]
 
+            # get box annotations from the original image
+            # (5, 20, 0), (-1, -1, -1), 
             bbox_annotation = annotations[j, :, :]
             bbox_annotation = bbox_annotation[bbox_annotation[:, 2] != -1]
 
@@ -98,8 +108,6 @@ class FocalLoss(nn.Module):
                 targets = targets.cuda()
 
             if self.fcos:
-                targets[:, :] = 0
-
                 positive_indices, assigned_annotations, _, _ = get_fcos_positives(
                     bbox_annotation,
                     anchors,
@@ -119,6 +127,9 @@ class FocalLoss(nn.Module):
 
             targets[positive_indices, :] = 0
             targets[positive_indices, assigned_annotations[positive_indices, 2].long()] = 1
+
+            #print(limits, j, "cls", (targets != -1).nonzero()[:, 0])
+            #print(targets)
 
             if torch.cuda.is_available():
                 alpha_factor = torch.ones(targets.shape).cuda() * alpha

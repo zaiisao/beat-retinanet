@@ -19,6 +19,7 @@ model_urls = {
 
 
 class PyramidFeatures(nn.Module):
+    # feature_size is the number of channels in each feature map
     def __init__(self, C3_size, C4_size, C5_size, feature_size=256):
         super(PyramidFeatures, self).__init__()
         # torch.nn.Conv1d(in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1,
@@ -176,17 +177,36 @@ class ResNet(nn.Module):
 
         self.fcos = fcos
 
-        self.dstcn = dsTCNModel(**kwargs)
+        # self.conv1 = nn.Conv2d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        # self.bn1 = nn.BatchNorm2d(64)
+        # self.relu = nn.ReLU(inplace=True)
+        # self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        # self.layer1 = self._make_layer(block, 64, layers[0])
+        # self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        # self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        # self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
 
-        #self.conv1 = nn.Conv1d(3, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        # downsampling tcn's output tensor dimension is (b, 256, 8192) (b, channel, width/length)
+
+        # From WaveBeat model
+        # With 8 layers, each with stride 2, we downsample the signal by a factor of 2^8 = 256,
+        # which, given an input sample rate of 22.05 kHz produces an output signal with a
+        # sample rate of 86 Hz
+        self.dstcn = dsTCNModel(**kwargs) # conv1 shape: (b, 256, 8192)
         self.conv1 = nn.Conv1d(256, 256, kernel_size=7, stride=2, padding=3, bias=False)
+
+        #self.conv1 = dsTCNModel(**kwargs) # conv1 shape: (b, 256, 8192)
         self.bn1 = nn.BatchNorm1d(256)
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, 64, layers[0])
+        #self.layer1 = self._make_layer(block, 256, layers[0])
         self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
+        #self.layer2 = self._make_layer(block, 512, layers[1], stride=2)
         self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
+        #self.layer3 = self._make_layer(block, 1024, layers[2], stride=2)
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
+        #self.layer4 = self._make_layer(block, 2048, layers[3], stride=2)
 
         if block == BasicBlock:
             fpn_sizes = [self.layer2[layers[1] - 1].conv2.out_channels, self.layer3[layers[2] - 1].conv2.out_channels,
@@ -266,8 +286,13 @@ class ResNet(nn.Module):
         else:
             img_batch = inputs
 
+        # From WaveBeat model
+        # With 8 layers, each with stride 2, we downsample the signal by a factor of 2^8 = 256,
+        # which, given an input sample rate of 22.05 kHz produces an output signal with a
+        # sample rate of 86 Hz
         img_batch = self.dstcn(img_batch)
 
+        # The following is the 1D version of RetinaNet
         x = self.conv1(img_batch)
         x = self.bn1(x)
         x = self.relu(x)
@@ -278,6 +303,7 @@ class ResNet(nn.Module):
         x3 = self.layer3(x2)
         x4 = self.layer4(x3)
 
+        # features = list of five feature maps
         features = self.fpn([x2, x3, x4])
 
         if self.fcos:
@@ -303,10 +329,10 @@ class ResNet(nn.Module):
                 for feature_index in range(len(features)):
                     focal_losses.append(self.focalLoss(
                         classification[feature_index],
-                        anchors[feature_index],
-                        annotations,
-                        regress_distances[feature_index],
-                        centerness=centerness[feature_index]
+                        anchors[feature_index], # anchors[feature_index] refers to pixel locations of feature map at feature index
+                                                # same as (x, y) in formula 2 of FCOS paper
+                        annotations, # annotations has bounding box informations in the input image
+                        regress_distances[feature_index]
                     ))
 
                     regression_losses.append(self.regressionLoss(

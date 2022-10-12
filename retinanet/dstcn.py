@@ -99,9 +99,10 @@ class dsTCNModel(torch.nn.Module):
             nblocks (int): Number of total TCN blocks. Default: 10
             kernel_size (int): Width of the convolutional kernels. Default: 15
             stride (int): Stide size when applying convolutional filter. Default: 2 
-            dialation_growth (int): Compute the dilation factor at each block as dilation_growth ** (n % stack_size). Default: 8
-            channel_growth (int): Compute the output channels at each black as in_ch * channel_growth. Default: 1
-            channel_width (int): When channel_growth = 1 all blocks use convolutions with this many channels. Default: 32
+            dilation_growth (int): Compute the dilation factor at each block as dilation_growth ** (n % stack_size). Default: 8
+            channel_growth (int): Channel growth factor. Compute the output channels at each black as in_ch + channel_growth. Default: 1
+                                  (In our case, in_ch is always 1)
+            channel_width (int): Number of channels. When channel_growth = 1 all blocks use convolutions with this many channels. Default: 32
             stack_size (int): Number of blocks that constitute a single stack of blocks. Default: 10
             grouped (bool): Use grouped convolutions to reduce the total number of parameters. Default: False
             causal (bool): Causal TCN configuration does not consider future input values. Default: False

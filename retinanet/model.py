@@ -204,11 +204,7 @@ class ResNet(nn.Module):
         #     raise ValueError(f"Block type {block} not understood")
 
         # self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
-        #def __init__(self, C3_size, C4_size, C5_size, feature_size=256):
-        C6_size = self.dstcn.blocks[5].out_ch # 192
-        C7_size = self.dstcn.blocks[6].out_ch # 224
-        C8_size = self.dstcn.blocks[7].out_ch # 256, width = 8192
-        self.fpn = PyramidFeatures(C6_size, C7_size, C8_size, feature_size=256)
+        self.fpn = PyramidFeatures(*(block.out_ch for block in self.dstcn.blocks[-3:]))
 
         num_anchors = 3
         if self.fcos:
@@ -316,7 +312,7 @@ class ResNet(nn.Module):
         if self.training:
             if self.fcos:
                 focal_losses, regression_losses, centerness_losses = [], [], []
-                regress_limits = [(0, 64), (64, 128), (128, 256), (256, 512), (512, float("inf"))]
+                regress_distances = [(0, 64), (64, 128), (128, 256), (256, 512), (512, float("inf"))]
 
                 for feature_index in range(len(feature_maps)):
                     focal_losses.append(self.focalLoss(
@@ -324,21 +320,21 @@ class ResNet(nn.Module):
                         anchors[feature_index], # anchors[feature_index] refers to pixel locations of feature map at feature index
                                                 # same as (x, y) in formula 2 of FCOS paper
                         annotations, # annotations has bounding box informations in the input image
-                        regress_limits[feature_index]
+                        regress_distances[feature_index]
                     ))
 
                     regression_losses.append(self.regressionLoss(
                         regression_outputs[feature_index],
                         anchors[feature_index],
                         annotations,
-                        regress_limits[feature_index]
+                        regress_distances[feature_index]
                     ))
 
                     centerness_losses.append(self.centernessLoss(
                         centerness_outputs[feature_index],
                         anchors[feature_index],
                         annotations,
-                        regress_limits[feature_index]
+                        regress_distances[feature_index]
                     ))
 
                 focal_loss = torch.stack(focal_losses).mean(dim=0)

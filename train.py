@@ -74,7 +74,7 @@ temp_args, _ = parser.parse_known_args()
 # parse them args
 args = parser.parse_args()
 
-datasets = ["ballroom", "hainsworth"]
+datasets = ["ballroom"]#, "hainsworth"]
 
 # set the seed
 seed = 42
@@ -214,7 +214,8 @@ if __name__ == '__main__':
                 optimizer.zero_grad()
 
                 if args.fcos:
-                    classification_loss, regression_loss, centerness_loss = retinanet(data)
+                    classification_loss, regression_loss, centerness_loss = retinanet(data) # retinanet = model.resnet50(**dict_args)
+                                                                                            # this calls the forward function of resnet50
                 else:
                     classification_loss, regression_loss = retinanet(data)
                     centerness_loss = torch.zeros(1)
@@ -229,6 +230,8 @@ if __name__ == '__main__':
                     continue
 
                 loss.backward()
+                print(retinanet.module.regressionModel.regression.weight.grad, retinanet.module.regressionModel.regression.weight.grad.shape)
+                print(retinanet.module.regressionModel.centerness.weight.grad, retinanet.module.regressionModel.centerness.weight.grad.shape)
 
                 torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 

@@ -112,7 +112,7 @@ class dsTCNModel(torch.nn.Module):
     def __init__(self, 
                  ninputs=1,
                  noutputs=2,
-                 nblocks=10, 
+                 nblocks=8, 
                  kernel_size=3, 
                  stride=2,
                  dilation_growth=8, 
@@ -141,10 +141,12 @@ class dsTCNModel(torch.nn.Module):
             ))
 
     def forward(self, x):
+        results = []
         for block in self.blocks:
             x = block(x)
+            results.append(x)
 
-        return x
+        return results
 
     def compute_receptive_field(self):
         """ Compute the receptive field in samples."""

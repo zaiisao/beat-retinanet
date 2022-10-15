@@ -85,7 +85,7 @@ class RegressionModel(nn.Module):
         self.conv4 = nn.Conv1d(feature_size, feature_size, kernel_size=3, padding=1)
         self.act4 = nn.ReLU()
 
-        #self.output = nn.Conv1d(feature_size, num_anchors * 4, kernel_size=3, padding=1)
+        #self.output = nn.Conv2d(feature_size, num_anchors * 4, kernel_size=3, padding=1)
         self.regression = nn.Conv1d(feature_size, num_anchors * 2, kernel_size=3, padding=1)
         self.centerness = nn.Conv1d(feature_size, 1, kernel_size=3, padding=1)
 
@@ -193,31 +193,22 @@ class ResNet(nn.Module):
         # which, given an input sample rate of 22.05 kHz produces an output signal with a
         # sample rate of 86 Hz
         self.dstcn = dsTCNModel(**kwargs) # conv1 shape: (b, 256, 8192)
-        self.conv1 = nn.Conv1d(256, 256, kernel_size=7, stride=2, padding=3, bias=False)
 
-        #self.conv1 = dsTCNModel(**kwargs) # conv1 shape: (b, 256, 8192)
-        self.bn1 = nn.BatchNorm1d(256)
-        self.relu = nn.ReLU(inplace=True)
-        self.maxpool = nn.MaxPool1d(kernel_size=3, stride=2, padding=1)
-        self.layer1 = self._make_layer(block, 64, layers[0])
-        #self.layer1 = self._make_layer(block, 256, layers[0])
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=2)
-        #self.layer2 = self._make_layer(block, 512, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=2)
-        #self.layer3 = self._make_layer(block, 1024, layers[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
-        #self.layer4 = self._make_layer(block, 2048, layers[3], stride=2)
+        # if block == BasicBlock:
+        #     fpn_sizes = [self.layer2[layers[1] - 1].conv2.out_channels, self.layer3[layers[2] - 1].conv2.out_channels,
+        #                  self.layer4[layers[3] - 1].conv2.out_channels]
+        # elif block == Bottleneck:
+        #     fpn_sizes = [self.layer2[layers[1] - 1].conv3.out_channels, self.layer3[layers[2] - 1].conv3.out_channels,
+        #                  self.layer4[layers[3] - 1].conv3.out_channels]
+        # else:
+        #     raise ValueError(f"Block type {block} not understood")
 
-        if block == BasicBlock:
-            fpn_sizes = [self.layer2[layers[1] - 1].conv2.out_channels, self.layer3[layers[2] - 1].conv2.out_channels,
-                         self.layer4[layers[3] - 1].conv2.out_channels]
-        elif block == Bottleneck:
-            fpn_sizes = [self.layer2[layers[1] - 1].conv3.out_channels, self.layer3[layers[2] - 1].conv3.out_channels,
-                         self.layer4[layers[3] - 1].conv3.out_channels]
-        else:
-            raise ValueError(f"Block type {block} not understood")
-
-        self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
+        # self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
+        #def __init__(self, C3_size, C4_size, C5_size, feature_size=256):
+        C6_size = self.dstcn.blocks[5].out_ch # 192
+        C7_size = self.dstcn.blocks[6].out_ch # 224
+        C8_size = self.dstcn.blocks[7].out_ch # 256, width = 8192
+        self.fpn = PyramidFeatures(C6_size, C7_size, C8_size, feature_size=256)
 
         num_anchors = 3
         if self.fcos:
@@ -280,73 +271,74 @@ class ResNet(nn.Module):
                 layer.eval()
 
     def forward(self, inputs):
-
+        # inputs = audio, target
         if self.training:
-            img_batch, annotations = inputs
+            audio_batch, annotations = inputs
         else:
-            img_batch = inputs
+            audio_batch = inputs
 
         # From WaveBeat model
         # With 8 layers, each with stride 2, we downsample the signal by a factor of 2^8 = 256,
         # which, given an input sample rate of 22.05 kHz produces an output signal with a
         # sample rate of 86 Hz
-        img_batch = self.dstcn(img_batch)
+        tcn_layers = self.dstcn(audio_batch)
 
         # The following is the 1D version of RetinaNet
-        x = self.conv1(img_batch)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.maxpool(x)
+        # x = self.conv1(audio_batch)
+        # x = self.bn1(x)
+        # x = self.relu(x)
+        # x = self.maxpool(x)
 
-        x1 = self.layer1(x)
-        x2 = self.layer2(x1)
-        x3 = self.layer3(x2)
-        x4 = self.layer4(x3)
+        # x1 = self.layer1(x)
+        # x2 = self.layer2(x1)
+        # x3 = self.layer3(x2)
+        # x4 = self.layer4(x3)
 
-        # features = list of five feature maps
-        features = self.fpn([x2, x3, x4])
+        # feature_maps = list of five feature maps
+        #feature_maps = self.fpn([x2, x3, x4])
+        feature_maps = self.fpn(tcn_layers[-3:])
 
         if self.fcos:
-            classification = [self.classificationModel(feature) for feature in features]
-            regression = []
-            centerness = []
+            classification_outputs = [self.classificationModel(feature_map) for feature_map in feature_maps]
+            regression_outputs = []
+            centerness_outputs = []
 
-            for feature in features:
-                feature_regression, feature_centerness = self.regressionModel(feature)
-                regression.append(feature_regression)
-                centerness.append(feature_centerness)
+            for feature_map in feature_maps:
+                bbx_regression_output, centerness_regression_output = self.regressionModel(feature_map)
+                regression_outputs.append(bbx_regression_output)
+                centerness_outputs.append(centerness_regression_output)
         else:
-            classification = torch.cat([self.classificationModel(feature) for feature in features], dim=1)
-            regression = torch.cat([self.regressionModel(feature) for feature in features], dim=1)
+            classification_outputs = torch.cat([self.classificationModel(feature_map) for feature_map in feature_maps], dim=1)
+            regression_outputs = torch.cat([self.regressionModel(feature_map) for feature_map in feature_maps], dim=1)
 
-        anchors = self.anchors(img_batch)
+        anchors = self.anchors(audio_batch)
 
         if self.training:
             if self.fcos:
                 focal_losses, regression_losses, centerness_losses = [], [], []
-                regress_distances = [(0, 64), (64, 128), (128, 256), (256, 512), (512, float("inf"))]
+                regress_limits = [(0, 64), (64, 128), (128, 256), (256, 512), (512, float("inf"))]
 
-                for feature_index in range(len(features)):
+                for feature_index in range(len(feature_maps)):
                     focal_losses.append(self.focalLoss(
-                        classification[feature_index],
+                        classification_outputs[feature_index],
                         anchors[feature_index], # anchors[feature_index] refers to pixel locations of feature map at feature index
                                                 # same as (x, y) in formula 2 of FCOS paper
                         annotations, # annotations has bounding box informations in the input image
-                        regress_distances[feature_index]
+                        regress_limits[feature_index]
                     ))
 
                     regression_losses.append(self.regressionLoss(
-                        regression[feature_index],
+                        regression_outputs[feature_index],
                         anchors[feature_index],
                         annotations,
-                        regress_distances[feature_index]
+                        regress_limits[feature_index]
                     ))
 
                     centerness_losses.append(self.centernessLoss(
-                        centerness[feature_index],
+                        centerness_outputs[feature_index],
                         anchors[feature_index],
                         annotations,
-                        regress_distances[feature_index]
+                        regress_limits[feature_index]
                     ))
 
                 focal_loss = torch.stack(focal_losses).mean(dim=0)
@@ -361,7 +353,7 @@ class ResNet(nn.Module):
                 return focal_loss, regression_loss
         else:
             transformed_anchors = self.regressBoxes(anchors, regression)
-            transformed_anchors = self.clipBoxes(transformed_anchors, img_batch)
+            transformed_anchors = self.clipBoxes(transformed_anchors, audio_batch)
 
             finalResult = [[], [], []]
 

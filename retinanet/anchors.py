@@ -11,7 +11,7 @@ class Anchors(nn.Module):
 
         self.fcos = fcos
 
-        self.pyramid_levels = [3, 4, 5, 6, 7]
+        self.pyramid_levels = [6, 7, 8, 9, 10] #[3, 4, 5, 6, 7] -> [6, 7, 8, 9, 10]
         self.strides = [2 ** x for x in self.pyramid_levels]
 
         self.sizes = [(0 if self.fcos else 2 ** (x + 2)) for x in self.pyramid_levels]

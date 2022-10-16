@@ -338,14 +338,14 @@ class ResNet(nn.Module):
                         regress_distances[feature_index]
                     ))
 
-                focal_loss = torch.stack(focal_losses).mean(dim=0)
-                regression_loss = torch.stack(regression_losses).mean(dim=0)
-                centerness_loss = torch.stack(centerness_losses).mean(dim=0)
+                focal_loss = torch.stack(focal_losses).mean(dim=0, keepdim=True)
+                regression_loss = torch.stack(regression_losses).mean(dim=0, keepdim=True)
+                centerness_loss = torch.stack(centerness_losses).mean(dim=0, keepdim=True)
 
                 return focal_loss, regression_loss, centerness_loss
             else:
-                focal_loss = self.focalLoss(classification, anchors, annotations)
-                regression_loss = self.regressionLoss(regression, anchors, annotations)
+                focal_loss = self.focalLoss(classification_outputs, anchors, annotations)
+                regression_loss = self.regressionLoss(regression_outputs, anchors, annotations)
 
                 return focal_loss, regression_loss
         else:

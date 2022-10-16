@@ -14,7 +14,7 @@ class Anchors(nn.Module):
         self.pyramid_levels = [8, 9, 10, 11, 12] #[6, 7, 8, 9, 10] #[3, 4, 5, 6, 7] -> [6, 7, 8, 9, 10]
         self.strides = [2 ** x for x in self.pyramid_levels]
 
-        self.sizes = [(0 if self.fcos else 2 ** (x + 2)) for x in self.pyramid_levels]
+        self.sizes = [(0 if self.fcos else 2 ** (x - 2)) for x in self.pyramid_levels]
         self.scales = np.array([0]) if self.fcos else np.array([2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)])
 
     def forward(self, image):

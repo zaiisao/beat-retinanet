@@ -230,9 +230,10 @@ if __name__ == '__main__':
                     continue
 
                 loss.backward()
-                # print(torch.abs(retinanet.module.classificationModel.output.weight.grad).sum())
-                # print(torch.abs(retinanet.module.regressionModel.regression.weight.grad).sum())
-                # print(torch.abs(retinanet.module.regressionModel.centerness.weight.grad).sum())
+                print(torch.abs(retinanet.module.classificationModel.output.weight.grad).sum())
+                print(torch.abs(retinanet.module.regressionModel.regression.weight.grad).sum())
+                if args.fcos:
+                    print(torch.abs(retinanet.module.regressionModel.centerness.weight.grad).sum())
 
                 torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 
@@ -242,9 +243,14 @@ if __name__ == '__main__':
 
                 epoch_loss.append(float(loss))
 
-                print(
-                    'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Centerness loss: {:1.5f} | Running loss: {:1.5f}'.format(
-                        epoch_num, iter_num, float(classification_loss), float(regression_loss), float(centerness_loss), np.mean(loss_hist)))
+                if args.fcos:
+                    print(
+                        'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Centerness loss: {:1.5f} | Running loss: {:1.5f}'.format(
+                            epoch_num, iter_num, float(classification_loss), float(regression_loss), float(centerness_loss), np.mean(loss_hist)))
+                else:
+                    print(
+                        'Epoch: {} | Iteration: {} | Classification loss: {:1.5f} | Regression loss: {:1.5f} | Running loss: {:1.5f}'.format(
+                            epoch_num, iter_num, float(classification_loss), float(regression_loss), np.mean(loss_hist)))
 
                 del classification_loss
                 del regression_loss

@@ -151,7 +151,10 @@ class FocalLoss(nn.Module):
 
             classification_losses.append(cls_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
 
-        return torch.stack(classification_losses).mean(dim=0, keepdim=True)
+        if self.fcos:
+            return torch.stack(classification_losses).sum(dim=0)
+        else:
+            return torch.stack(classification_losses).mean(dim=0, keepdim=True)
 
 class RegressionLoss(nn.Module):
     def __init__(self, fcos=False, loss_type="f1", weight=10):
@@ -192,7 +195,7 @@ class RegressionLoss(nn.Module):
                 continue
 
             if self.fcos:
-                positive_indices, assigned_annotations, _, _ = get_fcos_positives(
+                positive_indices, assigned_annotations, left, right = get_fcos_positives(
                     bbox_annotation,
                     anchor,
                     regress_limits[0],
@@ -232,60 +235,108 @@ class RegressionLoss(nn.Module):
 
                     regression_diff = torch.abs(targets - jth_regression[positive_indices, :])
 
+                    # regression_loss = torch.where(
+                    #     torch.le(regression_diff, 1.0 / 9.0),
+                    #     0.5 * 9.0 * torch.pow(regression_diff, 2),
+                    #     regression_diff - 0.5 / 9.0
+                    # )
                     regression_loss = torch.where(
-                        torch.le(regression_diff, 1.0 / 9.0),
-                        0.5 * 9.0 * torch.pow(regression_diff, 2),
-                        regression_diff - 0.5 / 9.0
+                        torch.le(regression_diff, 1.0 / 3.0),
+                        0.5 * 3.0 * torch.pow(regression_diff, 2),
+                        regression_diff - 0.5 / 3.0
                     )
+
+                    regression_losses.append(regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":
+                    #num_positive_anchors = positive_indices.sum()
+
                     # 1. For the predicted line B_p, ensuring  x_p_2 > x_p_1
-                    bbox_prediction, _ = torch.sort(jth_regression[positive_indices, :])
-                    bbox_ground = assigned_annotations[:, :2]
+                    # bbox_prediction, _ = torch.sort(jth_regression[positive_indices, :])
+                    # bbox_ground = torch.stack((left, right), dim=1)[positive_indices, :].float()#assigned_annotations[:, :2]
 
-                    # 2. Calculating length of B_g: L_g = x_g_2 − x_g_1 (위에서 이미 정의한 gt_widths)
-                    bbox_ground_lengths = gt_widths
+                    # # 2. Calculating length of B_g: L_g = x_g_2 − x_g_1 (위에서 이미 정의한 gt_widths)
+                    # bbox_ground_lengths = bbox_ground[:, 1] - bbox_ground[:, 0] #gt_widths
 
-                    # 3. Calculating length of B_p: L_p = x̂_p_2 − x̂_p_1
-                    bbox_prediction_lengths = bbox_prediction[:, 1] - bbox_prediction[:, 0]
+                    # # 3. Calculating length of B_p: L_p = x̂_p_2 − x̂_p_1
+                    # bbox_prediction_lengths = bbox_prediction[:, 1] - bbox_prediction[:, 0]
 
-                    # 4. Calculating intersection I between B_p and B_g
-                    intersection_x1 = torch.max(bbox_ground[:, 0], bbox_prediction[:, 0])
-                    intersection_x2 = torch.min(bbox_ground[:, 1], bbox_prediction[:, 1])
-                    intersection = torch.where(
-                        intersection_x2 > intersection_x1,
-                        intersection_x2 - intersection_x1,
-                        torch.zeros(bbox_ground.size(dim=0))
-                    )
+                    # # 4. Calculating intersection I between B_p and B_g
+                    # intersection_x1 = torch.max(bbox_ground[:, 0], bbox_prediction[:, 0])
+                    # intersection_x2 = torch.min(bbox_ground[:, 1], bbox_prediction[:, 1])
+                    # intersection = torch.where(
+                    #     intersection_x2 > intersection_x1,
+                    #     intersection_x2 - intersection_x1,
+                    #     torch.zeros(bbox_ground.size(dim=0))
+                    # )
 
-                    # 5. Finding the coordinate of smallest enclosing line B_c:
-                    coordinate_x1 = torch.min(bbox_ground[:, 0], bbox_prediction[:, 0])
-                    coordinate_x2 = torch.max(bbox_ground[:, 1], bbox_prediction[:, 1])
+                    # # 5. Finding the coordinate of smallest enclosing line B_c:
+                    # coordinate_x1 = torch.min(bbox_ground[:, 0], bbox_prediction[:, 0])
+                    # coordinate_x2 = torch.max(bbox_ground[:, 1], bbox_prediction[:, 1])
 
-                    # 6. Calculating length of B_c
-                    bbox_coordinate = coordinate_x2 - coordinate_x1
+                    # # 6. Calculating length of B_c
+                    # bbox_coordinate = coordinate_x2 - coordinate_x1 + 1e-7
 
-                    # 7. IoU (I / U), where U = L_p + L_g - I
-                    union = bbox_prediction_lengths + bbox_ground_lengths - intersection
-                    iou = intersection / union
+                    # # 7. IoU (I / U), where U = L_p + L_g - I
+                    # union = bbox_prediction_lengths + bbox_ground_lengths - intersection
+                    # iou = intersection / union
 
-                    if self.loss_type == "iou":
-                        # 9a. L_IoU = 1 - IoU
-                        regression_loss = 1 - iou
+                    # if self.loss_type == "iou":
+                    #     # 9a. L_IoU = 1 - IoU
+                    #     regression_loss = 1 - iou
+                    # else:
+                    #     # 8. GIoU = IoU - (L_c - U)/L_c
+                    #     giou = iou - (bbox_coordinate - union)/bbox_coordinate
+                    #     print(bbox_prediction, bbox_ground, giou)
+
+                    #     # 9b. L_GIoU = 1 - GIoU
+                    #     regression_loss = 1 - giou
+
+                    # #print(regression_loss.mean(), torch.exp(regression_loss.mean() * self.weight))
+                    # regression_losses.append(regression_loss.mean() * self.weight)
+                    target_left = left[positive_indices]
+                    target_right = right[positive_indices]
+
+                    pred_left = jth_regression[positive_indices, 0]
+                    pred_right = jth_regression[positive_indices, 1]
+
+                    target_area = (target_left + target_right)
+                    pred_area = (pred_left + pred_right)
+
+                    w_intersect = torch.min(pred_left, target_left) + torch.min(pred_right, target_right)
+                    g_w_intersect = torch.max(pred_left, target_left) + torch.max(pred_right, target_right)
+                    ac_uion = g_w_intersect + 1e-7
+                    area_intersect = w_intersect
+                    area_union = target_area + pred_area - area_intersect
+                    ious = (area_intersect + 1.0) / (area_union + 1.0)
+                    gious = ious - (ac_uion - area_union) / ac_uion
+                    if self.loss_type == 'iou':
+                        losses = -torch.log(ious)
+                    elif self.loss_type == 'linear_iou':
+                        losses = 1 - ious
+                    elif self.loss_type == 'giou':
+                        losses = 1 - gious
                     else:
-                        # 8. GIoU = IoU - (L_c - U)/L_c
-                        giou = iou - (bbox_coordinate - union)/bbox_coordinate
+                        raise NotImplementedError
+                    print(torch.stack((target_left, target_right), dim=1), torch.stack((pred_left, pred_right), dim=1), losses)
 
-                        # 9b. L_GIoU = 1 - GIoU
-                        regression_loss = 1 - giou
+                    # if weight is not None and weight.sum() > 0:
+                    #     return (losses * weight).sum()
+                    # else:
+                    #     assert losses.numel() != 0
+                    #     return losses.sum()
 
-                regression_losses.append(regression_loss.mean() * self.weight)
+                    regression_losses.append(losses.sum() * self.weight)
+
             else:
                 if torch.cuda.is_available():
                     regression_losses.append(torch.tensor(0).float().cuda())
                 else:
                     regression_losses.append(torch.tensor(0).float())
 
-        return torch.stack(regression_losses).mean(dim=0, keepdim=True)
+        if self.fcos:
+            return torch.stack(regression_losses).sum(dim=0)
+        else:
+            return torch.stack(regression_losses).mean(dim=0, keepdim=True)
 
 class CenternessLoss(nn.Module):
     def __init__(self, fcos=False):
@@ -338,4 +389,7 @@ class CenternessLoss(nn.Module):
             #print(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
             centerness_losses.append(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
 
-        return torch.stack(centerness_losses).mean(dim=0, keepdim=True)
+        if self.fcos:
+            return torch.stack(centerness_losses).sum(dim=0)
+        else:
+            return torch.stack(centerness_losses).mean(dim=0, keepdim=True)

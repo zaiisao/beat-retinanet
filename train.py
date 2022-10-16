@@ -230,6 +230,9 @@ if __name__ == '__main__':
                     continue
 
                 loss.backward()
+                # print(torch.abs(retinanet.module.classificationModel.output.weight.grad).sum())
+                # print(torch.abs(retinanet.module.regressionModel.regression.weight.grad).sum())
+                # print(torch.abs(retinanet.module.regressionModel.centerness.weight.grad).sum())
 
                 torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 

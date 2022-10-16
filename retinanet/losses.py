@@ -154,10 +154,11 @@ class FocalLoss(nn.Module):
         return torch.stack(classification_losses).mean(dim=0, keepdim=True)
 
 class RegressionLoss(nn.Module):
-    def __init__(self, fcos=False, loss_type="f1"):
+    def __init__(self, fcos=False, loss_type="f1", weight=10):
         super(RegressionLoss, self).__init__()
         self.fcos = fcos
         self.loss_type = loss_type
+        self.weight = weight
 
     def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf'))):
         # regressions is (B, C, W, H), with C = 4*num_anchors = 4*9
@@ -277,7 +278,7 @@ class RegressionLoss(nn.Module):
                         # 9b. L_GIoU = 1 - GIoU
                         regression_loss = 1 - giou
 
-                regression_losses.append(regression_loss.mean())
+                regression_losses.append(regression_loss.mean() * self.weight)
             else:
                 if torch.cuda.is_available():
                     regression_losses.append(torch.tensor(0).float().cuda())
@@ -309,7 +310,7 @@ class CenternessLoss(nn.Module):
             bbox_annotation = annotations[j, :, :]
             bbox_annotation = bbox_annotation[bbox_annotation[:, 2] != -1]
 
-            jth_centerness = torch.clamp(jth_centerness, 1e-4, 1.0 - 1e-4)
+            #jth_centerness = torch.clamp(jth_centerness, 1e-4, 1.0 - 1e-4)
             jth_centerness = torch.sigmoid(jth_centerness)
 
             positive_indices, assigned_annotations, left, right = get_fcos_positives(
@@ -330,10 +331,11 @@ class CenternessLoss(nn.Module):
             bce = -(targets * torch.log(jth_centerness) + (1.0 - targets) * torch.log(1.0 - jth_centerness))
 
             if torch.cuda.is_available():
-                ctr_loss = bce.cuda()#torch.where(torch.ne(targets, -1.0), bce, torch.zeros(bce.shape).cuda())
+                ctr_loss = torch.where(positive_indices, bce, torch.zeros(bce.shape).cuda())
             else:
-                ctr_loss = bce#torch.where(torch.ne(targets, -1.0), bce, torch.zeros(bce.shape))
+                ctr_loss = torch.where(positive_indices, bce, torch.zeros(bce.shape))
 
+            print(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
             centerness_losses.append(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
 
         return torch.stack(centerness_losses).mean(dim=0, keepdim=True)

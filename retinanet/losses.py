@@ -335,7 +335,7 @@ class CenternessLoss(nn.Module):
             else:
                 ctr_loss = torch.where(positive_indices, bce, torch.zeros(bce.shape))
 
-            print(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
+            #print(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
             centerness_losses.append(ctr_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
 
         return torch.stack(centerness_losses).mean(dim=0, keepdim=True)

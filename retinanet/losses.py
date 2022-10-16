@@ -317,7 +317,7 @@ class RegressionLoss(nn.Module):
                         losses = 1 - gious
                     else:
                         raise NotImplementedError
-                    print(torch.stack((target_left, target_right), dim=1), torch.stack((pred_left, pred_right), dim=1), losses)
+                    #print(torch.stack((target_left, target_right), dim=1), torch.stack((pred_left, pred_right), dim=1), losses)
 
                     # if weight is not None and weight.sum() > 0:
                     #     return (losses * weight).sum()

@@ -99,7 +99,7 @@ class BeatDataset(torch.utils.data.Dataset):
         #if self.dataset in ["beatles", "rwc_popular"]:
         if self.dataset in ["rwc_popular"]:
             file_ext = "*L+R.wav"
-        elif self.dataset in ["ballroom", "hainsworth", "gtzan", "smc", "beatles"]:
+        elif self.dataset in ["ballroom", "hainsworth", "gtzan", "smc", "beatles", "carnatic"]:
             file_ext = "*.wav"
         else:
             raise ValueError(f"Invalid dataset: {self.dataset}")

@@ -170,7 +170,7 @@ class ClassificationModel(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, fcos=False, **kwargs):
+    def __init__(self, block, layers, fcos=False, reg_loss_type="f1", **kwargs):
         #self.inplanes = 64
         self.inplanes = 256
         super(ResNet, self).__init__()
@@ -220,7 +220,7 @@ class ResNet(nn.Module):
         self.clipBoxes = ClipBoxes()
 
         self.focalLoss = losses.FocalLoss(fcos=self.fcos)
-        self.regressionLoss = losses.RegressionLoss(fcos=self.fcos, loss_type="giou")
+        self.regressionLoss = losses.RegressionLoss(fcos=self.fcos, loss_type=reg_loss_type)
         self.centernessLoss = losses.CenternessLoss(fcos=self.fcos)
 
         for m in self.modules():

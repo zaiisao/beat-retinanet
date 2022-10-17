@@ -26,14 +26,14 @@ parser = ArgumentParser()
 
 # add PROGRAM level args
 parser.add_argument('--dataset', type=str, default='ballroom')
-parser.add_argument('--beatles_audio_dir', type=str, default='./data')
-parser.add_argument('--beatles_annot_dir', type=str, default='./data')
-parser.add_argument('--ballroom_audio_dir', type=str, default='./data')
-parser.add_argument('--ballroom_annot_dir', type=str, default='./data')
-parser.add_argument('--hainsworth_audio_dir', type=str, default='./data')
-parser.add_argument('--hainsworth_annot_dir', type=str, default='./data')
-parser.add_argument('--rwc_popular_audio_dir', type=str, default='./data')
-parser.add_argument('--rwc_popular_annot_dir', type=str, default='./data')
+parser.add_argument('--beatles_audio_dir', type=str, default=None)
+parser.add_argument('--beatles_annot_dir', type=str, default=None)
+parser.add_argument('--ballroom_audio_dir', type=str, default=None)
+parser.add_argument('--ballroom_annot_dir', type=str, default=None)
+parser.add_argument('--hainsworth_audio_dir', type=str, default=None)
+parser.add_argument('--hainsworth_annot_dir', type=str, default=None)
+parser.add_argument('--rwc_popular_audio_dir', type=str, default=None)
+parser.add_argument('--rwc_popular_annot_dir', type=str, default=None)
 parser.add_argument('--preload', action="store_true")
 parser.add_argument('--audio_sample_rate', type=int, default=44100)
 parser.add_argument('--target_factor', type=int, default=256) # block 하나당 곱하기 2
@@ -67,6 +67,7 @@ parser.add_argument('--skip_connections', default=False, action="store_true")
 parser.add_argument('--norm_type', type=str, default='BatchNorm')
 parser.add_argument('--act_type', type=str, default='PReLU')
 parser.add_argument('--fcos', action='store_true')
+parser.add_argument('--reg_loss_type', type=str, default='f1')
 
 # THIS LINE IS KEY TO PULL THE MODEL NAME
 temp_args, _ = parser.parse_known_args()
@@ -74,7 +75,7 @@ temp_args, _ = parser.parse_known_args()
 # parse them args
 args = parser.parse_args()
 
-datasets = ["ballroom", "hainsworth"]
+datasets = ["ballroom", "hainsworth", "carnatic"]
 
 # set the seed
 seed = 42
@@ -118,6 +119,9 @@ for dataset in datasets:
     elif dataset == "rwc_popular":
         audio_dir = args.rwc_popular_audio_dir
         annot_dir = args.rwc_popular_annot_dir
+
+    if not audio_dir or not annot_dir:
+        continue
 
     train_dataset = BeatDataset(audio_dir,
                                     annot_dir,
@@ -230,10 +234,10 @@ if __name__ == '__main__':
                     continue
 
                 loss.backward()
-                print(torch.abs(retinanet.module.classificationModel.output.weight.grad).sum())
-                print(torch.abs(retinanet.module.regressionModel.regression.weight.grad).sum())
-                if args.fcos:
-                    print(torch.abs(retinanet.module.regressionModel.centerness.weight.grad).sum())
+                # print(torch.abs(retinanet.module.classificationModel.output.weight.grad).sum())
+                # print(torch.abs(retinanet.module.regressionModel.regression.weight.grad).sum())
+                # if args.fcos:
+                #     print(torch.abs(retinanet.module.regressionModel.centerness.weight.grad).sum())
 
                 torch.nn.utils.clip_grad_norm_(retinanet.parameters(), 0.1)
 
@@ -264,7 +268,7 @@ if __name__ == '__main__':
 
         scheduler.step(np.mean(epoch_loss))
 
-        #torch.save(retinanet.module, '{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
+        torch.save(retinanet.module, '{}_retinanet_{}.pt'.format(parser.dataset, epoch_num))
 
     retinanet.eval()
 

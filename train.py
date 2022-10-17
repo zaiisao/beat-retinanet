@@ -34,6 +34,8 @@ parser.add_argument('--hainsworth_audio_dir', type=str, default=None)
 parser.add_argument('--hainsworth_annot_dir', type=str, default=None)
 parser.add_argument('--rwc_popular_audio_dir', type=str, default=None)
 parser.add_argument('--rwc_popular_annot_dir', type=str, default=None)
+parser.add_argument('--carnatic_audio_dir', type=str, default=None)
+parser.add_argument('--carnatic_annot_dir', type=str, default=None)
 parser.add_argument('--preload', action="store_true")
 parser.add_argument('--audio_sample_rate', type=int, default=44100)
 parser.add_argument('--target_factor', type=int, default=256) # block 하나당 곱하기 2
@@ -119,6 +121,9 @@ for dataset in datasets:
     elif dataset == "rwc_popular":
         audio_dir = args.rwc_popular_audio_dir
         annot_dir = args.rwc_popular_annot_dir
+    elif dataset == "carnatic":
+        audio_dir = args.carnatic_audio_dir
+        annot_dir = args.carnatic_annot_dir
 
     if not audio_dir or not annot_dir:
         continue

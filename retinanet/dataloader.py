@@ -137,7 +137,7 @@ class BeatDataset(torch.utils.data.Dataset):
             # find the corresponding annot file
             if self.dataset in ["rwc_popular", "beatles"]:
                 replace = "_L+R.wav"
-            elif self.dataset in ["ballroom", "hainsworth", "gtzan", "smc"]:
+            elif self.dataset in ["ballroom", "hainsworth", "gtzan", "smc", "carnatic"]:
                 replace = ".wav"
             
             filename = os.path.basename(audio_file).replace(replace, "")
@@ -162,6 +162,8 @@ class BeatDataset(torch.utils.data.Dataset):
                 annot_filepath = os.path.join(self.annot_dir, f"{filename}*.txt")
                 annot_file = glob.glob(annot_filepath)[0]
                 self.annot_files.append(annot_file)
+            elif self.dataset == "carnatic":
+                self.annot_files.append(os.path.join(self.annot_dir, f"{filename}.beats"))
 
         self.data = [] # when preloading store audio data and metadata
         if self.preload:
@@ -249,7 +251,7 @@ class BeatDataset(torch.utils.data.Dataset):
 
         # convert to mono by averaging the stereo; in_ch becomes 1
         if len(audio) == 2:
-            print("WARNING: Audio is not mono")
+            #print("WARNING: Audio is not mono")
             audio = torch.mean(audio, dim=0).unsqueeze(0)
 
         # normalize all audio inputs -1 to 1
@@ -327,6 +329,9 @@ class BeatDataset(torch.utils.data.Dataset):
                 line = line.strip('\n')
                 time_sec = line
                 beat = 1
+            elif self.dataset == "carnatic":
+                line = line.strip('\n')
+                time_sec, beat = line.split(',')
 
             # convert beat to one-hot
             beat = int(beat)

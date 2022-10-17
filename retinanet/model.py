@@ -206,7 +206,7 @@ class ResNet(nn.Module):
         # self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
         self.fpn = PyramidFeatures(*(block.out_ch for block in self.dstcn.blocks[-3:]))
 
-        num_anchors = 3
+        num_anchors = 6
         if self.fcos:
             num_anchors = 1
 
@@ -220,7 +220,7 @@ class ResNet(nn.Module):
         self.clipBoxes = ClipBoxes()
 
         self.focalLoss = losses.FocalLoss(fcos=self.fcos)
-        self.regressionLoss = losses.RegressionLoss(fcos=self.fcos, loss_type=reg_loss_type)
+        self.regressionLoss = losses.RegressionLoss(fcos=self.fcos, loss_type=reg_loss_type, num_anchors=num_anchors)
         self.centernessLoss = losses.CenternessLoss(fcos=self.fcos)
 
         for m in self.modules():

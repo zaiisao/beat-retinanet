@@ -154,11 +154,12 @@ class FocalLoss(nn.Module):
             return torch.stack(classification_losses).mean(dim=0, keepdim=True)
 
 class RegressionLoss(nn.Module):
-    def __init__(self, fcos=False, loss_type="f1", weight=10):
+    def __init__(self, fcos=False, loss_type="f1", weight=10, num_anchors=3):
         super(RegressionLoss, self).__init__()
         self.fcos = fcos
         self.loss_type = loss_type
         self.weight = weight
+        self.num_anchors = num_anchors
 
     def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf'))):
         # regressions is (B, C, W, H), with C = 4*num_anchors = 4*9
@@ -212,6 +213,8 @@ class RegressionLoss(nn.Module):
 
                 gt_widths  = assigned_annotations[:, 1] - assigned_annotations[:, 0]
                 gt_ctr_x   = assigned_annotations[:, 0] + 0.5 * gt_widths
+                # print("gt", gt_widths)
+                # print("anchor", anchor_widths_pi)
 
                 # clip widths to 1
                 gt_widths  = torch.clamp(gt_widths, min=1)
@@ -238,10 +241,13 @@ class RegressionLoss(nn.Module):
                     #     regression_diff - 0.5 / 9.0
                     # )
                     regression_loss = torch.where(
-                        torch.le(regression_diff, 1.0 / 3.0),
-                        0.5 * 3.0 * torch.pow(regression_diff, 2),
-                        regression_diff - 0.5 / 3.0
+                        torch.le(regression_diff, 1.0 / self.num_anchors),
+                        0.5 * self.num_anchors * torch.pow(regression_diff, 2),
+                        regression_diff - 0.5 / self.num_anchors
                     )
+                    # print("regression", jth_regression[positive_indices, :])
+                    # print("targets", targets)
+                    # print("loss", regression_loss)
 
                     regression_losses.append(regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":

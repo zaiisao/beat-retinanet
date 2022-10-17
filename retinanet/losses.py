@@ -49,10 +49,8 @@ class FocalLoss(nn.Module):
         self.fcos = fcos
 
     def forward(self, classifications, anchors, annotations, regress_limits=(0, float('inf'))):
-        #alpha = 0.25
-        #gamma = 2.0
-        alpha = 1
-        gamma = 0
+        alpha = 0.25
+        gamma = 2.0
 
         anchor = anchors[0, :, :]
 
@@ -130,19 +128,18 @@ class FocalLoss(nn.Module):
             targets[positive_indices, :] = 0
             targets[positive_indices, assigned_annotations[positive_indices, 2].long()] = 1
 
-            # if torch.cuda.is_available():
-            #     alpha_factor = torch.ones(targets.shape).cuda() * alpha
-            # else:
-            #     alpha_factor = torch.ones(targets.shape) * alpha
+            if torch.cuda.is_available():
+                alpha_factor = torch.ones(targets.shape).cuda() * alpha
+            else:
+                alpha_factor = torch.ones(targets.shape) * alpha
 
-            # alpha_factor = torch.where(torch.eq(targets, 1.), alpha_factor, 1. - alpha_factor)
-            # focal_weight = torch.where(torch.eq(targets, 1.), 1. - jth_classification, jth_classification)
-            # focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
+            alpha_factor = torch.where(torch.eq(targets, 1.), alpha_factor, 1. - alpha_factor)
+            focal_weight = torch.where(torch.eq(targets, 1.), 1. - jth_classification, jth_classification)
+            focal_weight = alpha_factor * torch.pow(focal_weight, gamma)
 
             bce = -(targets * torch.log(jth_classification) + (1.0 - targets) * torch.log(1.0 - jth_classification))
 
-            #cls_loss = focal_weight * bce
-            cls_loss = bce
+            cls_loss = focal_weight * bce
 
             if torch.cuda.is_available():
                 cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape).cuda())

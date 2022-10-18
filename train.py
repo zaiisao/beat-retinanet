@@ -94,12 +94,12 @@ torch.backends.cudnn.benchmark = True
 args.default_root_dir = os.path.join("lightning_logs", "full")
 print(args.default_root_dir)
 
-state_dicts = glob.glob('./checkpoints/*.ckpt')
+state_dicts = glob.glob('./checkpoints/*.pt')
 start_epoch = 0
 checkpoint_path = None
 if len(state_dicts) > 0:
     checkpoint_path = state_dicts[-1]
-    start_epoch = int(re.search("epoch=(.*)-step", checkpoint_path).group(1)) + 1
+    start_epoch = int(re.search("retinanet_(.*).pt", checkpoint_path).group(1)) + 1
     print("loaded:" + checkpoint_path)
 else:
     print("no checkpoint found")
@@ -210,7 +210,10 @@ if __name__ == '__main__':
 
     print('Num training images: {}'.format(len(train_dataset_list)))
 
-    for epoch_num in range(args.epochs):
+    if not os.path.exists("./checkpoints"):
+        os.makedirs("./checkpoints")
+
+    for epoch_num in range(start_epoch, args.epochs):
         retinanet.train()
         retinanet.module.freeze_bn()
 
@@ -273,8 +276,8 @@ if __name__ == '__main__':
 
         scheduler.step(np.mean(epoch_loss))
 
-        torch.save(retinanet, 'retinanet_{}.pt'.format(epoch_num))
+        torch.save(retinanet, './checkpoints/retinanet_{}.pt'.format(epoch_num))
 
     retinanet.eval()
 
-    torch.save(retinanet, 'model_final.pt')
+    torch.save(retinanet, './checkpoints/model_final.pt')

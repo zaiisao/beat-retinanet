@@ -213,8 +213,8 @@ class RegressionLoss(nn.Module):
 
                 gt_widths  = assigned_annotations[:, 1] - assigned_annotations[:, 0]
                 gt_ctr_x   = assigned_annotations[:, 0] + 0.5 * gt_widths
-                print("gt", gt_widths)
-                print("anchor", anchor_widths_pi)
+                # print("gt", gt_widths)
+                # print("anchor", anchor_widths_pi)
 
                 # clip widths to 1
                 gt_widths  = torch.clamp(gt_widths, min=1)
@@ -245,9 +245,9 @@ class RegressionLoss(nn.Module):
                         0.5 * self.num_anchors * torch.pow(regression_diff, 2),
                         regression_diff - 0.5 / self.num_anchors
                     )
-                    print("regression", jth_regression[positive_indices, :])
-                    print("targets", targets)
-                    print("loss", regression_loss)
+                    # print("regression", jth_regression[positive_indices, :])
+                    # print("targets", targets)
+                    # print("loss", regression_loss)
 
                     regression_losses.append(regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":

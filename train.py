@@ -194,13 +194,13 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             retinanet = retinanet.cuda()
 
+    if checkpoint_path:
+        retinanet.load_state_dict(torch.load(checkpoint_path))
+
     if torch.cuda.is_available():
         retinanet = torch.nn.DataParallel(retinanet).cuda()
     else:
         retinanet = torch.nn.DataParallel(retinanet)
-
-    if checkpoint_path:
-        retinanet.load_state_dict(torch.load(checkpoint_path))
 
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 

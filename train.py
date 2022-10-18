@@ -199,6 +199,9 @@ if __name__ == '__main__':
     else:
         retinanet = torch.nn.DataParallel(retinanet)
 
+    if checkpoint_path:
+        model.load_state_dict(torch.load(checkpoint_path))
+
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)

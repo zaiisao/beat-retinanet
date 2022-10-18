@@ -10,7 +10,6 @@ from itertools import product
 from argparse import ArgumentParser
 import traceback
 import sys
-from collections import OrderedDict
 
 from retinanet import model
 from retinanet.dataloader import BeatDataset, collater
@@ -195,23 +194,13 @@ if __name__ == '__main__':
         if torch.cuda.is_available():
             retinanet = retinanet.cuda()
 
-    if checkpoint_path:
-        #retinanet.load_state_dict(torch.load(checkpoint_path))
-        new_state_dict = OrderedDict()
-
-        for k, v in torch.load(checkpoint_path).items():
-            if 'module' not in k:
-                k = 'module.'+k
-            else:
-                k = k.replace('features.module.', 'module.features.')
-            new_state_dict[k]=v
-
-        retinanet.load_state_dict(new_state_dict)
-
     if torch.cuda.is_available():
         retinanet = torch.nn.DataParallel(retinanet).cuda()
     else:
         retinanet = torch.nn.DataParallel(retinanet)
+
+    if checkpoint_path:
+        retinanet.load_state_dict(torch.load(checkpoint_path))
 
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 

@@ -200,7 +200,7 @@ if __name__ == '__main__':
         retinanet = torch.nn.DataParallel(retinanet)
 
     if checkpoint_path:
-        retinanet.load_state_dict(torch.load(checkpoint_path))
+        retinanet.load_state_dict(torch.load(checkpoint_path), strict=False)
 
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 

@@ -248,15 +248,18 @@ if __name__ == '__main__':
 
         for iter_num, data in enumerate(train_dataloader):
             audio, target = data
+            if use_gpu:
+                audio = audio.cuda()
+                target = target.cuda()
 
             try:
                 optimizer.zero_grad()
 
                 if args.fcos:
-                    classification_loss, regression_loss, centerness_loss = retinanet(data) # retinanet = model.resnet50(**dict_args)
-                                                                                            # this calls the forward function of resnet50
+                    classification_loss, regression_loss, centerness_loss = retinanet(audio, target)    # retinanet = model.resnet50(**dict_args)
+                                                                                                        # this calls the forward function of resnet50
                 else:
-                    classification_loss, regression_loss = retinanet(data)
+                    classification_loss, regression_loss = retinanet(audio, target)
                     centerness_loss = torch.zeros(1)
     
                 classification_loss = classification_loss.mean()

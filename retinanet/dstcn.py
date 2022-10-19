@@ -140,11 +140,11 @@ class dsTCNModel(torch.nn.Module):
                 act_type
             ))
 
-    def forward(self, x):
+    def forward(self, x, last_count):
         results = []
         for i, block in enumerate(self.blocks):
             x = block(x)
-            if i >= 5:
+            if i >= len(self.blocks) - last_count:
                 results.append(x)
 
         return results

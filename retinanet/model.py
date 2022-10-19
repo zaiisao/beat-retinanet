@@ -278,7 +278,7 @@ class ResNet(nn.Module):
         # With 8 layers, each with stride 2, we downsample the signal by a factor of 2^8 = 256,
         # which, given an input sample rate of 22.05 kHz produces an output signal with a
         # sample rate of 86 Hz
-        tcn_layers = self.dstcn(audio_batch)
+        tcn_layers = self.dstcn(audio_batch, 3)
 
         # The following is the 1D version of RetinaNet
         # x = self.conv1(audio_batch)
@@ -293,8 +293,7 @@ class ResNet(nn.Module):
 
         # feature_maps = list of five feature maps
         #feature_maps = self.fpn([x2, x3, x4])
-        feature_maps = self.fpn(tcn_layers[-3:])
-        del tcn_layers
+        feature_maps = self.fpn(tcn_layers)
 
         if self.fcos:
             classification_outputs = [self.classificationModel(feature_map) for feature_map in feature_maps]

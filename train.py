@@ -10,10 +10,31 @@ from itertools import product
 from argparse import ArgumentParser
 import traceback
 import sys
+from os.path import join as ospj
 
 from retinanet import model
 from retinanet.dataloader import BeatDataset, collater
 from retinanet.dstcn import dsTCNModel
+
+class Logger(object):
+    """Log stdout messages."""
+    def __init__(self, outfile):
+        self.terminal = sys.stdout
+        self.log = open(outfile, "w")
+        sys.stdout = self
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log.write(message)
+
+    def flush(self):
+        self.terminal.flush()
+
+def configure_log():
+    log_file_name = ospj("./", 'log.log')
+    Logger(log_file_name)
+
+configure_log()
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = "1"

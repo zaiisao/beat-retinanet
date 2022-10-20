@@ -10,7 +10,7 @@ import config
 matplotlib.use('agg')
 #file_path = config.train_annotations_file
 
-num_anchors = 3
+num_anchors = 5
 
 def resize_image(image_data, size):
     """ Resizes the image without changing the aspect ratio with padding, so that
@@ -251,13 +251,13 @@ def get_clusters(num_clusters):
             for beat_index, current_beat_location in enumerate(beat_times[:-1]):
                 next_beat_location = beat_times[beat_index + 1]
 
-                beat_length = (next_beat_location - current_beat_location) * 22050 / 256
+                beat_length = (next_beat_location - current_beat_location) #* 22050
                 annotation_dims.append(beat_length)
 
             for downbeat_index, current_downbeat_location in enumerate(downbeat_times[:-1]):
                 next_downbeat_location = downbeat_times[downbeat_index + 1]
 
-                downbeat_length = (next_downbeat_location - current_downbeat_location) * 22050 / 256
+                downbeat_length = (next_downbeat_location - current_downbeat_location)# * 22050
                 annotation_dims.append(downbeat_length)
 
 

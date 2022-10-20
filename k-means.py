@@ -61,30 +61,30 @@ def write_anchors_to_file(centroids,X,anchor_file,input_shape):
     '''
     f = open(anchor_file,'w')
     
-    anchors = centroids.copy()
-    print(anchors.shape)
+    centroids2 = centroids.copy()
+    print(centroids2.shape)
  
-    for i in range(anchors.shape[0]):
+    for i in range(centroids2.shape[0]):
         #求出yolov3相对于原图的实际大小
         #anchors[i][0]*=input_shape
-        anchors[i]*=input_shape
+        centroids2[i]*=input_shape
         #anchors[i][1]*=input_shape
 
     #widths = anchors[:,0]
-    widths = anchors[:]
+    widths = centroids2[:]
     sorted_indices = np.argsort(widths)
  
-    print('Anchors = ', anchors[sorted_indices])
+    print('Anchors = ', centroids2[sorted_indices])
         
     for i in sorted_indices[:-1]:
         #f.write('%0.2f,%0.2f, '%(anchors[i,0],anchors[i,1]))
         #f.write('%0.2f, '%(anchors[i,0]))
-        f.write('%0.2f, '%(anchors[i]))
+        f.write('%0.2f, '%(centroids2[i]))
  
     #there should not be comma after last anchor, that's why
     #f.write('%0.2f,%0.2f\n'%(anchors[sorted_indices[-1:],0],anchors[sorted_indices[-1:],1]))
     #f.write('%0.2f\n'%(anchors[sorted_indices[-1:],0]))
-    f.write('%0.2f\n'%(anchors[sorted_indices[-1:]]))
+    f.write('%0.2f\n'%(centroids2[sorted_indices[-1:]]))
     
     f.write('avg IoU: %f\n'%(avg_IOU(X,centroids)))
     print()
@@ -118,6 +118,7 @@ def k_means(X,centroids,eps,anchor_file,input_shape):
             write_anchors_to_file(centroids,X,anchor_file,input_shape)
             return
  
+        print(assignments)
         #calculate new centroids
         #centroid_sums=np.zeros((k,dim),np.float)   #初始化以便对每个簇的w,h求和
         centroid_sums=np.zeros((k), float)
@@ -203,17 +204,17 @@ def main(argv):
             for beat_index, current_beat_location in enumerate(beat_times[:-1]):
                 next_beat_location = beat_times[beat_index + 1]
 
-                beat_length = (next_beat_location - current_beat_location) * 22050 / 256
+                beat_length = (next_beat_location - current_beat_location) * 22050 / 2097152
                 annotation_dims.append(beat_length)
 
             for downbeat_index, current_downbeat_location in enumerate(downbeat_times[:-1]):
                 next_downbeat_location = downbeat_times[downbeat_index + 1]
 
-                downbeat_length = (next_downbeat_location - current_downbeat_location) * 22050 / 256
+                downbeat_length = (next_downbeat_location - current_downbeat_location) * 22050 / 2097152
                 annotation_dims.append(downbeat_length)
 
     annotation_dims = np.array(annotation_dims) #保存所有ground truth框的(w,h)
-
+    print(annotation_dims)
     eps = 0.005
  
     anchor_file = join( args.output_dir,'anchors_%d.txt'%(args.num_clusters))

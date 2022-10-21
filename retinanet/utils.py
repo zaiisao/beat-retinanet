@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
-
+from torchvision.ops import nms
 
 def conv3x3(in_planes, out_planes, stride=1):
     """3x3 convolution with padding"""
@@ -151,7 +151,8 @@ class ClipBoxes(nn.Module):
 
     def forward(self, boxes, img):
 
-        batch_size, num_channels, height, width = img.shape
+        #batch_size, num_channels, height, width = img.shape
+        batch_size, num_channels, width = img.shape
 
         boxes[:, :, 0] = torch.clamp(boxes[:, :, 0], min=0)
         #boxes[:, :, 1] = torch.clamp(boxes[:, :, 1], min=0)
@@ -161,3 +162,13 @@ class ClipBoxes(nn.Module):
         #boxes[:, :, 3] = torch.clamp(boxes[:, :, 3], max=height)
       
         return boxes
+
+def nms_2d(anchor_boxes, scores, thresh_iou):
+    boxes_3d = torch.cat((
+        torch.unsqueeze(anchor_boxes[:, 0], dim=1),
+        torch.zeros((anchor_boxes.size(dim=0), 1)),
+        torch.unsqueeze(anchor_boxes[:, 1], dim=1),
+        torch.zeros((anchor_boxes.size(dim=0), 1))
+    ), 1)
+
+    return nms(boxes_3d, scores, thresh_iou)

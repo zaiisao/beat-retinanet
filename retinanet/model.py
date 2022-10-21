@@ -3,8 +3,8 @@ import torch.nn as nn
 import torch
 import math
 import torch.utils.model_zoo as model_zoo
-from torchvision.ops import nms
-from retinanet.utils import BasicBlock, Bottleneck, BBoxTransform, ClipBoxes
+#from torchvision.ops import nms
+from retinanet.utils import BasicBlock, Bottleneck, BBoxTransform, ClipBoxes, nms_2d
 from retinanet.anchors import Anchors
 from retinanet import losses
 from retinanet.dstcn import dsTCNModel
@@ -269,6 +269,8 @@ class ResNet(nn.Module):
 
     def forward(self, inputs):
         # inputs = audio, target
+        self.training = len(inputs) == 2
+
         if self.training:
             audio_batch, annotations = inputs
         else:
@@ -350,7 +352,7 @@ class ResNet(nn.Module):
 
                 return focal_loss, regression_loss
         else:
-            transformed_anchors = self.regressBoxes(anchors, regression)
+            transformed_anchors = self.regressBoxes(anchors, regression_outputs)
             transformed_anchors = self.clipBoxes(transformed_anchors, audio_batch)
 
             finalResult = [[], [], []]
@@ -364,8 +366,8 @@ class ResNet(nn.Module):
                 finalAnchorBoxesIndexes = finalAnchorBoxesIndexes.cuda()
                 finalAnchorBoxesCoordinates = finalAnchorBoxesCoordinates.cuda()
 
-            for i in range(classification.shape[2]):
-                scores = torch.squeeze(classification[:, :, i])
+            for i in range(classification_outputs.shape[2]):
+                scores = torch.squeeze(classification_outputs[:, :, i])
                 scores_over_thresh = (scores > 0.05)
                 if scores_over_thresh.sum() == 0:
                     # no boxes to NMS, just continue
@@ -374,7 +376,8 @@ class ResNet(nn.Module):
                 scores = scores[scores_over_thresh]
                 anchorBoxes = torch.squeeze(transformed_anchors)
                 anchorBoxes = anchorBoxes[scores_over_thresh]
-                anchors_nms_idx = nms(anchorBoxes, scores, 0.5)
+                #anchors_nms_idx = nms(anchorBoxes, scores, 0.5)
+                anchors_nms_idx = nms_2d(anchorBoxes, scores, 0.5)
 
                 finalResult[0].extend(scores[anchors_nms_idx])
                 finalResult[1].extend(torch.tensor([i] * anchors_nms_idx.shape[0]))

@@ -227,6 +227,8 @@ if __name__ == '__main__':
             torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         ))
 
+    retinanet.training = True
+
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)

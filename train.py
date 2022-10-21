@@ -98,7 +98,8 @@ temp_args, _ = parser.parse_known_args()
 # parse them args
 args = parser.parse_args()
 
-datasets = ["ballroom", "hainsworth", "carnatic"]
+#datasets = ["ballroom", "hainsworth", "carnatic"]
+datasets = ["ballroom", "hainsworth"]
 
 # set the seed
 seed = 42
@@ -248,7 +249,7 @@ if __name__ == '__main__':
 
         for iter_num, data in enumerate(train_dataloader):
             audio, target = data
-            if use_gpu:
+            if use_gpu and torch.cuda.is_available():
                 audio = audio.cuda()
                 target = target.cuda()
 

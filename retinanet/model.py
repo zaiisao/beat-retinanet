@@ -206,14 +206,14 @@ class ResNet(nn.Module):
         # self.fpn = PyramidFeatures(fpn_sizes[0], fpn_sizes[1], fpn_sizes[2])
         self.fpn = PyramidFeatures(*(block.out_ch for block in self.dstcn.blocks[-3:]))
 
-        num_anchors = 6
+        num_anchors = 3
         if self.fcos:
             num_anchors = 1
 
         self.classificationModel = ClassificationModel(256, num_anchors=num_anchors)
         self.regressionModel = RegressionModel(256, num_anchors=num_anchors, fcos=self.fcos)
 
-        self.anchors = Anchors(fcos=self.fcos)
+        self.anchors = Anchors(base_level=8, fcos=self.fcos)
 
         self.regressBoxes = BBoxTransform()
 
@@ -308,7 +308,8 @@ class ResNet(nn.Module):
             classification_outputs = torch.cat([self.classificationModel(feature_map) for feature_map in feature_maps], dim=1)
             regression_outputs = torch.cat([self.regressionModel(feature_map) for feature_map in feature_maps], dim=1)
 
-        anchors = self.anchors(audio_batch)
+        #anchors = self.anchors(audio_batch)
+        anchors = self.anchors(tcn_layers[-3])
 
         if self.training:
             if self.fcos:

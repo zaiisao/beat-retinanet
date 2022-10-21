@@ -2,6 +2,7 @@ import argparse
 import torch
 import os
 import glob
+import tqdm
 from torchvision import transforms
 
 from retinanet import model
@@ -12,6 +13,8 @@ assert torch.__version__.split('.')[0] == '1'
 
 print('CUDA available: {}'.format(torch.cuda.is_available()))
 
+datasets = ["ballroom", "hainsworth", "carnatic"]
+results = {}
 
 def main(args=None):
     parser = argparse.ArgumentParser(description='Simple training script for training a RetinaNet network.')
@@ -30,6 +33,19 @@ def main(args=None):
     parser.add_argument('--gtzan_annot_dir', type=str, default='./data')
     parser.add_argument('--smc_audio_dir', type=str, default='./data')
     parser.add_argument('--smc_annot_dir', type=str, default='./data')
+    parser.add_argument('--audio_sample_rate', type=int, default=22050)
+    parser.add_argument('--channel_growth', type=int, default=32)
+    parser.add_argument('--channel_width', type=int, default=32)
+    parser.add_argument('--norm_type', type=str, default='BatchNorm')
+    parser.add_argument('--act_type', type=str, default='PReLU')
+    parser.add_argument('--patience', type=int, default=10)
+    parser.add_argument('--length', type=int, default=2097152)
+    parser.add_argument('--ninputs', type=int, default=1)
+    parser.add_argument('--noutputs', type=int, default=2)
+    parser.add_argument('--nblocks', type=int, default=10)
+    parser.add_argument('--kernel_size', type=int, default=15)
+    parser.add_argument('--stride', type=int, default=2)
+    parser.add_argument('--target_factor', type=int, default=256)
 
     args = parser.parse_args()
 
@@ -42,7 +58,8 @@ def main(args=None):
 
     # Create the model
     #retinanet = model.resnet50(num_classes=dataset_val.num_classes(), pretrained=True)
-    retinanet = model.resnet50()
+    dict_args = vars(args)
+    retinanet = model.resnet50(**dict_args)
 
     use_gpu = True
 
@@ -82,15 +99,15 @@ def main(args=None):
             audio_dir = args.smc_audio_dir
             annot_dir = args.smc_annot_dir
 
-        test_dataset = DownbeatDataset(audio_dir,
+        test_dataset = BeatDataset(audio_dir,
                                         annot_dir,
                                         dataset=dataset,
-                                        audio_sample_rate=config['audio_sample_rate'],
-                                        target_factor=config['target_factor'],
+                                        audio_sample_rate=args.audio_sample_rate,
+                                        target_factor=args.target_factor,
                                         subset="test" if not dataset in ["gtzan", "smc"] else "full-val",
                                         augment=False,
-                                        half=True if config['precision'] == 16 else False,
-                                        preload=args.preload)
+                                        preload=args.preload,
+                                        length=args.length)
 
         test_dataloader = torch.utils.data.DataLoader(test_dataset, 
                                                         shuffle=False,

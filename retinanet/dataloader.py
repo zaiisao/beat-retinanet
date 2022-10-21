@@ -369,17 +369,19 @@ class BeatDataset(torch.utils.data.Dataset):
     def make_intervals(self, target):
         beats = target[0, :]
         downbeats = target[1, :]
-        non_downbeats = beats - downbeats
+        #non_downbeats = beats - downbeats
 
+        beat_locations = torch.nonzero(beats).squeeze()
         downbeat_locations = torch.nonzero(downbeats).squeeze()
-        non_downbeat_locations = torch.nonzero(non_downbeats).squeeze()
+        #non_downbeat_locations = torch.nonzero(non_downbeats).squeeze()
 
         # equivalent code in retinanet "load_annotations" function in dataloader
         annotations = torch.zeros((0, 3))
 
         # some audio can miss annotations
         # interval을 만드려면 한 리스트에 2개 이상이 있어야 함
-        if downbeat_locations.size(dim=0) < 2 or non_downbeat_locations.size(dim=0) < 2:
+        #if downbeat_locations.size(dim=0) < 2 or non_downbeat_locations.size(dim=0) < 2:
+        if downbeat_locations.size(dim=0) < 2 or beat_locations.size(dim=0) < 2:
             return annotations
         
         # parse annotations
@@ -401,7 +403,8 @@ class BeatDataset(torch.utils.data.Dataset):
         annotations = torch.cat((
             annotations,
             make_interval_subset(downbeat_locations, 0),
-            make_interval_subset(non_downbeat_locations, 1)
+            #make_interval_subset(non_downbeat_locations, 1)
+            make_interval_subset(beat_locations, 1)
         ), axis=0)
 
         return annotations

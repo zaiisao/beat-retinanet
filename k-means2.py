@@ -200,8 +200,10 @@ def get_clusters(num_clusters):
         os.mkdir(output_dir)
  
     annotation_dims = []
+    beat_intervals, downbeat_intervals = [], []
 
-    for dataset in ["ballroom", "hains", "carnatic", "beatles"]:
+    #for dataset in ["ballroom", "hains", "carnatic"]:
+    for dataset in ["ballroom", "hains"]:
         root_path = os.getcwd() + "/" + input_dir + "/" + dataset + "/label"
         file_names = os.listdir(root_path)
 
@@ -212,6 +214,7 @@ def get_clusters(num_clusters):
             f = open(os.path.join(root_path, file_name))
           
             lines = [line.rstrip('\n') for line in f.readlines()]
+            #print(f"lines: {lines}")
          
         #     for line in lines:
         # #        line = line.replace('JPEGImages','labels')
@@ -240,30 +243,35 @@ def get_clusters(num_clusters):
                     line = line.replace('\t', ' ')
                     if dataset == "beatles":
                         line = line.replace('  ', ' ')
-                    print(line, file_name)
                     beat_time, beat_type = line.split(" ")
 
                 if beat_type == "1":
                     downbeat_times.append(float(beat_time))
-                else:
-                    beat_times.append(float(beat_time))
-
-            beat_intervals, downbeat_intervals = [], []
+                #else:
+                #    beat_times.append(float(beat_time))
+                beat_times.append(float(beat_time))
 
             for beat_index, current_beat_location in enumerate(beat_times[:-1]):
                 next_beat_location = beat_times[beat_index + 1]
 
                 beat_length = (next_beat_location - current_beat_location) #* 22050
                 annotation_dims.append(beat_length)
+                beat_intervals.append(beat_length)
+                #print(downbeat_length)
 
             for downbeat_index, current_downbeat_location in enumerate(downbeat_times[:-1]):
                 next_downbeat_location = downbeat_times[downbeat_index + 1]
 
                 downbeat_length = (next_downbeat_location - current_downbeat_location)# * 22050
                 annotation_dims.append(downbeat_length)
-
+                downbeat_intervals.append(downbeat_length)
+                #print(downbeat_length)
+            #break
+        print(f"beat lengths: {[ '%.2f' % elem for elem in beat_intervals ]}")
+        print(f"downbeat lengths: {[ '%.2f' % elem for elem in downbeat_intervals ]}")
 
     all_boxes = np.array(annotation_dims)
+    #print([ '%.2f' % elem for elem in annotation_dims ])
 
     print('\n')
     result = kmeans(all_boxes, num_clusters)
@@ -271,6 +279,7 @@ def get_clusters(num_clusters):
     #result = result.sort()
     dump_results(result)
     print("\n\n{} anchors:\n{}".format(num_clusters, result))
+    print("\n\n{} anchors:\n{}".format(num_clusters, 60//result))
     avg_acc = avg_iou(all_boxes, result)*100
     print("Average accuracy: {:.2f}%".format(avg_acc))
 

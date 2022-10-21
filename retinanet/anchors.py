@@ -6,28 +6,40 @@ import torch.nn as nn
 
 class Anchors(nn.Module):
     #def __init__(self, pyramid_levels=None, strides=None, sizes=None, ratios=None, scales=None):
-    def __init__(self, fcos=False):
+    def __init__(self, fcos=False, base_level=0):
         super(Anchors, self).__init__()
 
         self.fcos = fcos
+        self.base_level = base_level
 
         self.pyramid_levels = [8, 9, 10, 11, 12]
-        self.strides = [2 ** x for x in self.pyramid_levels]
+        self.strides = [2 ** (x - self.base_level) for x in self.pyramid_levels]
+        # self.strides = [2 ** x for x in self.pyramid_levels]
 
-        self.sizes = [(0 if self.fcos else 2 ** (x - 3)) for x in self.pyramid_levels]
-        self.scales = np.array([0]) if self.fcos else np.array([2 ** 0, 2 ** 0.5, 2 ** 1, 2 ** 1.5, 2 ** 2, 2 ** 2.5])
+        if self.fcos:
+            self.sizes = [0 for x in self.pyramid_levels]
+            self.scales = np.array([0])
+        else:
+            self.sizes = [x * 22050 / 256 for x in [0.32537674, 0.47555801, 0.64588683, 1.16883525, 2.17128976]]
+            self.scales = np.array([2 ** 0, 2 ** (1.0 / 3.0), 2 ** (2.0 / 3.0)])
+        #self.sizes = #[(0 if self.fcos else 2 ** (x - 3)) for x in self.pyramid_levels]
 
-    def forward(self, image):
-        image_shape = image.shape[2:]
-        image_shape = np.array(image_shape)
-        image_shapes = [(image_shape + 2 ** x - 1) // (2 ** x) for x in self.pyramid_levels]
+    def forward(self, base_image):
+        base_image_shape = base_image.shape[2:]
+        base_image_shape = np.array(base_image_shape)
+
+        #feature_map_shapes = [(base_image_shape + 2 ** x - 1) // (2 ** x) for x in self.pyramid_levels]
+        feature_map_shapes = [
+            (base_image_shape + 2 ** (x - self.base_level) - 1) // (2 ** (x - self.base_level))
+            for x in self.pyramid_levels
+        ]
 
         if self.fcos:
             all_anchors = []
 
             for idx, p in enumerate(self.pyramid_levels):
                 anchors = generate_anchors(base_size=self.sizes[idx], scales=self.scales)
-                shifted_anchors = np.expand_dims(shift(image_shapes[idx], self.strides[idx], anchors), axis=0)
+                shifted_anchors = np.expand_dims(shift(feature_map_shapes[idx], self.strides[idx], anchors), axis=0)
                 all_anchors.append(torch.from_numpy(shifted_anchors))
 
             return all_anchors
@@ -36,7 +48,7 @@ class Anchors(nn.Module):
 
             for idx, p in enumerate(self.pyramid_levels):
                 anchors = generate_anchors(base_size=self.sizes[idx], scales=self.scales)
-                shifted_anchors = shift(image_shapes[idx], self.strides[idx], anchors)
+                shifted_anchors = shift(feature_map_shapes[idx], self.strides[idx], anchors)
                 all_anchors = np.append(all_anchors, shifted_anchors, axis=0)
 
             all_anchors = np.expand_dims(all_anchors, axis=0)

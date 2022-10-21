@@ -137,7 +137,6 @@ def dump_results(data):
             data: array, containing the data for anchor boxes
     """
     f = open("./anchors.txt", 'w')
-    print("shape", np.shape(data))
     row = np.shape(data)[0]
     for i in range(row):
         #x_y = "%d %d\n" % (data[i][0], data[i][1])
@@ -200,7 +199,9 @@ def get_clusters(num_clusters):
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
  
-    for dataset in ["ballroom", "hains", "carnatic"]:
+    annotation_dims = []
+
+    for dataset in ["ballroom", "hains", "carnatic", "beatles"]:
         root_path = os.getcwd() + "/" + input_dir + "/" + dataset + "/label"
         file_names = os.listdir(root_path)
 
@@ -211,8 +212,6 @@ def get_clusters(num_clusters):
             f = open(os.path.join(root_path, file_name))
           
             lines = [line.rstrip('\n') for line in f.readlines()]
-            
-            annotation_dims = []
          
         #     for line in lines:
         # #        line = line.replace('JPEGImages','labels')
@@ -237,8 +236,11 @@ def get_clusters(num_clusters):
             for line in lines:
                 if dataset == "carnatic":
                     beat_time, beat_type = line.split(",")
-                else:
+                elif dataset == "ballroom" or dataset == "hains" or dataset == "beatles":
                     line = line.replace('\t', ' ')
+                    if dataset == "beatles":
+                        line = line.replace('  ', ' ')
+                    print(line, file_name)
                     beat_time, beat_type = line.split(" ")
 
                 if beat_type == "1":
@@ -265,10 +267,8 @@ def get_clusters(num_clusters):
 
     print('\n')
     result = kmeans(all_boxes, num_clusters)
-    print("result", result)
     #result = result[np.lexsort(result.T[0, None])]
     #result = result.sort()
-    print(result)
     dump_results(result)
     print("\n\n{} anchors:\n{}".format(num_clusters, result))
     avg_acc = avg_iou(all_boxes, result)*100

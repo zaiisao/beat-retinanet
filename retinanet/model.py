@@ -309,6 +309,8 @@ class ResNet(nn.Module):
         else:
             classification_outputs = torch.cat([self.classificationModel(feature_map) for feature_map in feature_maps], dim=1)
             regression_outputs = torch.cat([self.regressionModel(feature_map) for feature_map in feature_maps], dim=1)
+            classification_outputs_top = self.classificationModel(feature_maps[-1])
+            regression_outputs_top = self.regressionModel(feature_maps[-1])
 
         #anchors = self.anchors(audio_batch)
         anchors = self.anchors(tcn_layers[-3])
@@ -349,6 +351,9 @@ class ResNet(nn.Module):
             else:
                 focal_loss = self.focalLoss(classification_outputs, anchors, annotations)
                 regression_loss = self.regressionLoss(regression_outputs, anchors, annotations)
+
+                print(f"top focal loss: {self.focalLoss(classification_outputs_top, anchors[:, -1536:, :], annotations)}")
+                print(f"top regression loss: {self.regressionLoss(regression_outputs_top, anchors[:, -1536:, :], annotations, test=True)}")
 
                 return focal_loss, regression_loss
         else:

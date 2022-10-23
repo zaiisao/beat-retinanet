@@ -161,7 +161,7 @@ class RegressionLoss(nn.Module):
         self.weight = weight
         self.num_anchors = num_anchors
 
-    def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf'))):
+    def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf')),test=False):
         # regressions is (B, C, W, H), with C = 4*num_anchors = 4*9
         # in our case, regressions is (B, C, W), with C = 2*num_anchors = 2*1
         batch_size = regressions.shape[0] 
@@ -230,6 +230,10 @@ class RegressionLoss(nn.Module):
                         targets = targets/torch.Tensor([[0.1, 0.2]]).cuda()
                     else:
                         targets = targets/torch.Tensor([[0.1, 0.2]])
+
+                    if test:
+                        print(f"targets: {targets}")
+                        print(f"pred: {jth_regression[positive_indices, :]}")
 
                     negative_indices = 1 + (~positive_indices)
 

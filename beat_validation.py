@@ -18,7 +18,7 @@ print('CUDA available: {}'.format(torch.cuda.is_available()))
 #datasets = ["ballroom", "hainsworth", "carnatic"]
 datasets = ["ballroom", "hainsworth"]
 results = {}
-threshold = 0.2
+threshold = 0.4
 
 def main(args=None):
     parser = argparse.ArgumentParser(description='Simple training script for training a RetinaNet network.')
@@ -187,6 +187,7 @@ def main(args=None):
             last_target_beat_index, last_target_downbeat_index = None, None
 
             # construct pred tensor
+            a = 0
             for box_id in range(boxes.shape[0]):
                 score = float(scores[box_id])
                 label = int(labels[box_id])
@@ -194,7 +195,10 @@ def main(args=None):
 
                 # scores are sorted, so we can break
                 if score < threshold:
-                    break
+                    # break
+                    continue
+                else:
+                    a += 1
 
                 # if beat (label 1), first row (index 0)
                 # if downbeat (label 0), second row (index 1)
@@ -208,7 +212,7 @@ def main(args=None):
                     last_pred_downbeat_index = right_position_index
                 elif label == 1 and (last_pred_beat_index is None or right_position_index > last_pred_beat_index):
                     last_pred_beat_index = right_position_index
-
+            print(a)
             if last_pred_beat_index is not None:
                 wavebeat_format_pred[0, min(last_pred_beat_index, length - 1)] = 1
 
@@ -233,7 +237,10 @@ def main(args=None):
             wavebeat_format_target[0, min(last_target_beat_index, length - 1)] = 1
             wavebeat_format_target[1, min(last_target_downbeat_index, length - 1)] = 1
 
-            print(wavebeat_format_target.sum(dim=1))
+            # print(wavebeat_format_pred.sum(dim=1))
+            # print(wavebeat_format_pred.shape)
+            #print(wavebeat_format_target.sum(dim=1))
+            #print(wavebeat_format_pred.nonzero())
 
             target_sample_rate = args.audio_sample_rate // args.target_factor
 

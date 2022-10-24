@@ -111,9 +111,15 @@ class FocalLoss(nn.Module):
                 )
             else:
                 targets = torch.ones(jth_classification.shape) * -1
-
+                # print(f"targets shape in focal loss: {targets.shape}")
+                # print(f"anchors shape in focal loss: {anchors.shape}")
+                # print(f"anchors[0, :, :] shape in focal loss: {anchors[0, :, :].shape}")
+                # print(f"bbox_annotation[:, :2] shape in focal loss: {bbox_annotation[:, :2].shape}")
                 IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2])
+                # print(f"IoU shape in focal loss: {IoU.shape}")
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
+                # print(f"IoU_max shape in focal loss: {IoU_max.shape}")
+                # print(f"IoU_argmax shape in focal loss: {IoU_argmax.shape}")
 
                 targets[torch.lt(IoU_max, 0.4), :] = 0
                 positive_indices = torch.ge(IoU_max, 0.5)
@@ -220,6 +226,7 @@ class RegressionLoss(nn.Module):
                 gt_widths  = torch.clamp(gt_widths, min=1)
 
                 if self.loss_type == "f1":
+                    # equations 6, 7, 8, 9 from R-CNN paper
                     targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
                     targets_dw = torch.log(gt_widths / anchor_widths_pi)
 
@@ -241,21 +248,17 @@ class RegressionLoss(nn.Module):
                     if test:
                         print(f"regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
 
-                    # regression_loss = torch.where(
-                    #     torch.le(regression_diff, 1.0 / 9.0),
-                    #     0.5 * 9.0 * torch.pow(regression_diff, 2),
-                    #     regression_diff - 0.5 / 9.0
-                    # )
-                    regression_loss = torch.where(
-                        torch.le(regression_diff, 1.0 / self.num_anchors),
-                        0.5 * self.num_anchors * torch.pow(regression_diff, 2),
-                        regression_diff - 0.5 / self.num_anchors
+                    jth_regression_loss = torch.where(
+                        torch.le(regression_diff, 1.0 / 9.0),
+                        0.5 * 9.0 * torch.pow(regression_diff, 2),
+                        regression_diff - 0.5 / 9.0 # 9 is the square of sigma hyperparameter
                     )
+                    # (number of positive anchors, 2)
                     # print("regression", jth_regression[positive_indices, :])
                     # print("targets", targets)
                     # print("loss", regression_loss)
 
-                    regression_losses.append(regression_loss.mean())
+                    regression_losses.append(jth_regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":
                     #num_positive_anchors = positive_indices.sum()
 
@@ -342,10 +345,7 @@ class RegressionLoss(nn.Module):
                 else:
                     regression_losses.append(torch.tensor(0).float())
 
-        if self.fcos:
-            return torch.stack(regression_losses).sum(dim=0)
-        else:
-            return torch.stack(regression_losses).mean(dim=0, keepdim=True)
+        return torch.stack(regression_losses).mean(dim=0, keepdim=True) # return the regression loss averaged over the batch
 
 class CenternessLoss(nn.Module):
     def __init__(self, fcos=False):

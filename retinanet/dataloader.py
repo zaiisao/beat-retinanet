@@ -15,6 +15,10 @@ def collater(data):
     # data = one batch of [audio, annot(, metadata)]
     audios = [s[0] for s in data]
     annots = [s[1] for s in data]
+    # print(f"audios length in collater:\n {len(audios)}")
+    # print(f"audios in collater:\n {audios}")
+    # print(f"annots length in collater:\n {len(annots)}")
+    # print(f"annots in collater:\n {annots}")
 
     new_audios = torch.stack(audios)
 
@@ -32,6 +36,10 @@ def collater(data):
     else:
         new_annots = torch.ones((len(annots), 1, 3)) * -1
 
+    # print(f"new_audios shape in collater:\n {new_audios.shape}")
+    # print(f"new_audios in collater:\n {new_audios}")
+    # print(f"new_annots shape in collater:\n {new_annots.shape}")
+    # print(f"new_annots in collater:\n {new_annots}")
     #return {'img': padded_imgs, 'annot': annot_padded, 'scale': scales}
     return new_audios, new_annots
 
@@ -192,6 +200,10 @@ class BeatDataset(torch.utils.data.Dataset):
             audio_filename = self.audio_files[idx % len(self.audio_files)]
             annot_filename = self.annot_files[idx % len(self.audio_files)]
             audio, target, metadata = self.load_data(audio_filename, annot_filename)
+        # print(f"audio shape in __getitem__:\n {audio.shape}")
+        # print(f"audio in __getitem__:\n {audio}")
+        # print(f"target shape in __getitem__:\n {target.shape}")
+        # print(f"target in __getitem__:\n {target}")
 
         # do all processing in float32 not float16
         audio = audio.float()

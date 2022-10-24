@@ -58,29 +58,24 @@ def iou(boxes, clusters):
     n = boxes.shape[0]
     k = np.shape(clusters)[0]
 
-    #box_area = boxes[:, 0] * boxes[:, 1] # Area = width * height
-    box_area = boxes[:]
+    box_area = boxes[:, 0] * boxes[:, 1] # Area = width * height
     # Repeating the area for every cluster as we need to calculate IoU with every cluster
     box_area = box_area.repeat(k)
     box_area = np.reshape(box_area, (n, k))
 
-    #cluster_area = clusters[:, 0] * clusters[:, 1]
-    cluster_area = clusters[:]
+    cluster_area = clusters[:, 0] * clusters[:, 1]
     cluster_area = np.tile(cluster_area, [1, n])
     cluster_area = np.reshape(cluster_area, (n, k))
 
 
-    #box_w_matrix = np.reshape(boxes[:, 0].repeat(k), (n, k))
-    box_w_matrix = np.reshape(boxes.repeat(k), (n, k))
-    #cluster_w_matrix = np.reshape(np.tile(clusters[:, 0], (1, n)), (n, k))
-    cluster_w_matrix = np.reshape(np.tile(clusters, (1, n)), (n, k))
+    box_w_matrix = np.reshape(boxes[:, 0].repeat(k), (n, k))
+    cluster_w_matrix = np.reshape(np.tile(clusters[:, 0], (1, n)), (n, k))
     min_w_matrix = np.minimum(cluster_w_matrix, box_w_matrix)
 
-    # box_h_matrix = np.reshape(boxes[:, 1].repeat(k), (n, k))
-    # cluster_h_matrix = np.reshape(np.tile(clusters[:, 1], (1, n)), (n, k))
-    # min_h_matrix = np.minimum(cluster_h_matrix, box_h_matrix)
-    # inter_area = np.multiply(min_w_matrix, min_h_matrix)
-    inter_area = min_w_matrix
+    box_h_matrix = np.reshape(boxes[:, 1].repeat(k), (n, k))
+    cluster_h_matrix = np.reshape(np.tile(clusters[:, 1], (1, n)), (n, k))
+    min_h_matrix = np.minimum(cluster_h_matrix, box_h_matrix)
+    inter_area = np.multiply(min_w_matrix, min_h_matrix)
 
     result = inter_area / (box_area + cluster_area - inter_area)
     return result
@@ -127,7 +122,6 @@ def kmeans(boxes, k):
             clusters[cluster] = np.mean(boxes[current_nearest == cluster], axis=0)
 
         last_cluster = current_nearest
-
     return clusters
 
 
@@ -139,8 +133,8 @@ def dump_results(data):
     f = open("./anchors.txt", 'w')
     row = np.shape(data)[0]
     for i in range(row):
-        #x_y = "%d %d\n" % (data[i][0], data[i][1])
-        x_y = "%d\n" % (data[i])
+        x_y = "%d %d\n" % (data[i][0], data[i][1])
+        #x_y = "%d\n" % (data[i])
         f.write(x_y)
     f.close()
 
@@ -203,8 +197,8 @@ def get_clusters(num_clusters):
     beat_intervals, downbeat_intervals = [], []
 
     #for dataset in ["ballroom", "hains", "carnatic"]:
-    for dataset in ["ballroom", "hains"]:
-    #for dataset in ["test"]:
+    #for dataset in ["ballroom", "hains"]:
+    for dataset in ["test"]:
         root_path = os.getcwd() + "/" + input_dir + "/" + dataset + "/label"
         file_names = os.listdir(root_path)
 
@@ -257,7 +251,7 @@ def get_clusters(num_clusters):
                 next_beat_location = beat_times[beat_index + 1]
 
                 beat_length = (next_beat_location - current_beat_location) #* 22050
-                annotation_dims.append(beat_length)
+                annotation_dims.append((beat_length, 1))
                 beat_intervals.append(beat_length)
                 #print(downbeat_length)
 
@@ -265,12 +259,12 @@ def get_clusters(num_clusters):
                 next_downbeat_location = downbeat_times[downbeat_index + 1]
 
                 downbeat_length = (next_downbeat_location - current_downbeat_location)# * 22050
-                annotation_dims.append(downbeat_length)
+                annotation_dims.append((downbeat_length, 1))
                 downbeat_intervals.append(downbeat_length)
                 #print(downbeat_length)
             #break
         #print(f"beat lengths: {[ '%.2f' % elem for elem in beat_intervals ]}")
-        print(f"downbeat lengths: {[ '%.2f' % elem for elem in downbeat_intervals ]}")
+        #print(f"downbeat lengths: {[ '%.2f' % elem for elem in downbeat_intervals ]}")
 
     all_boxes = np.array(annotation_dims)
     #print([ '%.2f' % elem for elem in annotation_dims ])

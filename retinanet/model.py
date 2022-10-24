@@ -92,6 +92,7 @@ class RegressionModel(nn.Module):
         self.fcos = fcos
 
     def forward(self, x):
+        # x is a feature map
         out = self.conv1(x)
         out = self.act1(out)
 
@@ -280,7 +281,8 @@ class ResNet(nn.Module):
         # With 8 layers, each with stride 2, we downsample the signal by a factor of 2^8 = 256,
         # which, given an input sample rate of 22.05 kHz produces an output signal with a
         # sample rate of 86 Hz
-        tcn_layers = self.dstcn(audio_batch, 3)
+        #tcn_layers = self.dstcn(audio_batch, 3) # we get the top 3 layers for the FPN
+        tcn_layers = self.dstcn(audio_batch)
 
         # The following is the 1D version of RetinaNet
         # x = self.conv1(audio_batch)
@@ -295,7 +297,14 @@ class ResNet(nn.Module):
 
         # feature_maps = list of five feature maps
         #feature_maps = self.fpn([x2, x3, x4])
-        feature_maps = self.fpn(tcn_layers)
+        #feature_maps = self.fpn(tcn_layers[-3:]) # create feature maps using the last three layers of the TCN backbone; we add two additional layers to the feature maps
+        feature_maps = self.fpn(tcn_layers[-3:]) # for debugging
+        # feature_maps[0] is the lowest feature map
+        # feature_maps[-1] is the highest feature map
+        # return [P3_x, P4_x, P5_x, P6_x, P7_x]
+
+        # print(f"feature_maps[0] shape in resnet forward: \n {feature_maps[0].shape}")
+        # print(f"feature_maps[0] in resnet forward: \n {feature_maps[0]}")
 
         if self.fcos:
             classification_outputs = [self.classificationModel(feature_map) for feature_map in feature_maps]
@@ -307,13 +316,26 @@ class ResNet(nn.Module):
                 regression_outputs.append(bbx_regression_output)
                 centerness_outputs.append(centerness_regression_output)
         else:
-            classification_outputs = torch.cat([self.classificationModel(feature_map) for feature_map in feature_maps], dim=1)
-            regression_outputs = torch.cat([self.regressionModel(feature_map) for feature_map in feature_maps], dim=1)
-            classification_outputs_top = self.classificationModel(feature_maps[-1])
-            regression_outputs_top = self.regressionModel(feature_maps[-1])
+            # classification_outputs = torch.cat([self.classificationModel(feature_map) for feature_map in feature_maps], dim=1)
+            # regression_outputs = torch.cat([self.regressionModel(feature_map) for feature_map in feature_maps], dim=1)
+            classification_outputs = [self.classificationModel(feature_map) for feature_map in feature_maps]
+            regression_outputs = [self.regressionModel(feature_map) for feature_map in feature_maps]
+
+            # classification_outputs_top = self.classificationModel(feature_maps[-1])
+            # regression_outputs_top = self.regressionModel(feature_maps[-1])
+        # print(f"classification_outputs len in ResNet class forward:\n {len(classification_outputs)}")
+        # print(f"classification_outputs in ResNet class forward:\n {classification_outputs}")
+        # print(f"regression_outputs len in ResNet class forward:\n {len(regression_outputs)}")
+        # print(f"regression_outputs in ResNet class forward:\n {regression_outputs}")
 
         #anchors = self.anchors(audio_batch)
-        anchors = self.anchors(tcn_layers[-3])
+        anchors = self.anchors(tcn_layers[-3])  # tcn_layers[-3] is the base image for the bounding boxes and anchors
+                                                # 2^13 level, 8192 audio pixels
+                                                # tcn backbone has ten blocks, C_1, C_2, ..., C_10
+                                                # base level for bounding box and anchors is taken from C_8
+                                                # the FPN will consist of C8, C9, C10, and two additional blocks P11, P12
+                                                # anchors[0] is the anchor boxes on the lowest level of the feature maps
+                                                # anchors[-1] is the anchor boxes on the highest level of the feature maps
 
         if self.training:
             if self.fcos:
@@ -349,11 +371,42 @@ class ResNet(nn.Module):
 
                 return focal_loss, regression_loss, centerness_loss
             else:
-                focal_loss = self.focalLoss(classification_outputs, anchors, annotations)
-                regression_loss = self.regressionLoss(regression_outputs, anchors, annotations)
+                focal_losses, regression_losses = [], []
+                #focal_loss = self.focalLoss(classification_outputs, anchors, annotations)
+                #regression_loss = self.regressionLoss(regression_outputs, anchors, annotations)
 
-                print(f"top focal loss: {self.focalLoss(classification_outputs_top, anchors[:, -1536:, :], annotations)}")
-                print(f"top regression loss: {self.regressionLoss(regression_outputs_top, anchors[:, -1536:, :], annotations, test=True)}")
+                # for feature_index in range(len(feature_maps)):
+                #     focal_losses.append(self.focalLoss(
+                #         classification_outputs[feature_index],
+                #         anchors[feature_index],
+                #         annotations
+                #     ))
+
+                #     regression_losses.append(self.regressionLoss(
+                #         regression_outputs[feature_index],
+                #         anchors[feature_index],
+                #         annotations
+                #     ))
+
+                feature_index = len(feature_maps) - 1
+                focal_losses.append(self.focalLoss(
+                    classification_outputs[feature_index],
+                    anchors[feature_index],
+                    annotations
+                ))
+
+                regression_losses.append(self.regressionLoss(
+                    regression_outputs[feature_index],
+                    anchors[feature_index],
+                    annotations
+                ))
+                print(f"regression_losses:\n {regression_losses}")
+
+                # print(f"top focal loss: {self.focalLoss(classification_outputs_top, anchors[:, -1536:, :], annotations)}")
+                # print(f"top regression loss: {self.regressionLoss(regression_outputs_top, anchors[:, -1536:, :], annotations, test=True)}")
+                #
+                focal_loss = torch.stack(focal_losses).mean(dim=0, keepdim=True) # focal_losses is not a tensor but a list of tensors
+                regression_loss = torch.stack(regression_losses).mean(dim=0, keepdim=True) # regression_losses is not a tensor but a list of tensors
 
                 return focal_loss, regression_loss
         else:

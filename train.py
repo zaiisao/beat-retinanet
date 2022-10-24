@@ -254,6 +254,9 @@ if __name__ == '__main__':
             if use_gpu and torch.cuda.is_available():
                 audio = audio.cuda()
                 target = target.cuda()
+            # print(f"audio.shape in train loop:\n {audio.shape}")
+            # print(f"target.shape in train loop:\n {target.shape}")
+            # print(f"target in train loop:\n {target}")
 
             try:
                 optimizer.zero_grad()
@@ -264,7 +267,11 @@ if __name__ == '__main__':
                 else:
                     classification_loss, regression_loss = retinanet((audio, target))
                     centerness_loss = torch.zeros(1)
-    
+                # print(f"cls loss for each batch in train loop shape: \n {classification_loss.shape}")
+                # print(f"reg loss for each batch in train loop shape: \n {regression_loss.shape}")
+                # print(f"cls loss for each batch in train loop: \n {classification_loss}")
+                # print(f"reg loss for each batch in train loop: \n {regression_loss}")
+
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
                 centerness_loss = centerness_loss.mean()
@@ -306,6 +313,13 @@ if __name__ == '__main__':
                 print(e)
                 traceback.print_exc()
                 continue
+
+        #     break # for debugging
+        # # print(f"cls loss for each epoch in train loop shape: \n {classification_loss.shape}")
+        # # print(f"reg loss for each epoch in train loop shape: \n {regression_loss.shape}")
+        # # print(f"cls loss for each epoch in train loop: \n {classification_loss}")
+        # # print(f"reg loss for each epoch in train loop: \n {regression_loss}")
+        # break # also debugging
 
         scheduler.step(np.mean(epoch_loss))
 

@@ -103,8 +103,6 @@ def evaluate(pred, target, target_sample_rate, use_dbn=False):
         beat_pred = pred[0,:].clamp(1e-8, 1-1e-8).view(-1).numpy()
         downbeat_pred = pred[1,:].clamp(1e-8, 1-1e-8).view(-1).numpy()
 
-        print(beat_pred.sum())
-
         est_beats = beat_dbn.process_offline(beat_pred)
         est_downbeats = downbeat_dbn.process_offline(downbeat_pred)
 

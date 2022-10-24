@@ -140,14 +140,20 @@ class dsTCNModel(torch.nn.Module):
                 act_type
             ))
 
-    def forward(self, x, last_count):
-        results = []
+    #def forward(self, x, last_count):
+    def forward(self, x):
+        # first x is raw audio
+        # results = []
+        results_blocks = []
         for i, block in enumerate(self.blocks):
             x = block(x)
-            if i >= len(self.blocks) - last_count:
-                results.append(x)
+            # if i >= len(self.blocks) - last_count:
+            #     results.append(x)
+            results_blocks.append(x)
 
-        return results
+        # return results
+        # return x
+        return results_blocks
 
     def compute_receptive_field(self):
         """ Compute the receptive field in samples."""

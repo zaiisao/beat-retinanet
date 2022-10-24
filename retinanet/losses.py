@@ -231,13 +231,15 @@ class RegressionLoss(nn.Module):
                     else:
                         targets = targets/torch.Tensor([[0.1, 0.2]])
 
-                    if test:
-                        print(f"targets: {targets}")
-                        print(f"pred: {jth_regression[positive_indices, :]}")
+                    #if test:
+                        #print(f"targets: {targets}")
+                        #print(f"pred: {jth_regression[positive_indices, :]}")
 
                     negative_indices = 1 + (~positive_indices)
 
                     regression_diff = torch.abs(targets - jth_regression[positive_indices, :])
+                    if test:
+                        print(f"regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
 
                     # regression_loss = torch.where(
                     #     torch.le(regression_diff, 1.0 / 9.0),

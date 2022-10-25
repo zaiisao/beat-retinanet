@@ -181,7 +181,7 @@ class RegressionLoss(nn.Module):
         self.weight = weight
         self.num_anchors = num_anchors
 
-    def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf')),test=False, epoch_num=-1, iter_num=-1):
+    def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf')),test=False, epoch_num=-1, iter_num=-1, feature_index=-1):
         # regressions is (B, C, W, H), with C = 4*num_anchors = 4*9
         # in our case, regressions is (B, C, W), with C = 2*num_anchors = 2*1
         batch_size = regressions.shape[0] 
@@ -254,12 +254,12 @@ class RegressionLoss(nn.Module):
                     # torch.Size([371, 2])
                     # targets shape:
                     # torch.Size([371, 2])
-                    print(f"epoch: {epoch_num}, iter: {iter_num} targets_dx shape:\n{targets_dx.shape}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} targets_dw shape:\n{targets_dw.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th targets_dx shape:\n{targets_dx.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th targets_dw shape:\n{targets_dw.shape}")
                     targets = torch.stack((targets_dx, targets_dw)) # the shape of targets is (2, num of positive_indices)
-                    print(f"epoch: {epoch_num}, iter: {iter_num} targets.shape before t():\n{targets.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th targets.shape before t():\n{targets.shape}")
                     targets = targets.t()# the shape of targets is (num of positive_indices, 2)
-                    print(f"epoch: {epoch_num}, iter: {iter_num} targets.shape after t():\n{targets.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th targets.shape after t():\n{targets.shape}")
 
                     if torch.cuda.is_available():
                         targets = targets/torch.Tensor([[0.1, 0.2]]).cuda() # the shape of torch.Tensor([[0.1, 0.2]] is (1, 2)
@@ -279,14 +279,14 @@ class RegressionLoss(nn.Module):
                     # total number of anchors: 1536
                     # total number of positive anchor indices: 371
 
-                    print(f"epoch: {epoch_num}, iter: {iter_num} targets shape:\n{targets.shape}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} jth_regression[positive_indices, :] shape:\n{jth_regression[positive_indices, :].shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th targets shape:\n{targets.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th_regression[positive_indices, :] shape:\n{jth_regression[positive_indices, :].shape}")
                     regression_diff = torch.abs(targets - jth_regression[positive_indices, :]) # the shape of regression_diff is (num of positive_indices, 2)
                     # the shape of jth_regression is (number of all anchors on the feature map, 2)
                     # the shape of jth_regression[positive_indices, :] is (num of positive_indices, 2)
 
                     if test:
-                        print(f"epoch: {epoch_num}, iter: {iter_num} regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
+                        print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
 
                     # on fifth level, jth_regression_loss tensor shape is (512 * 3 = 1536, 2)
                     # on fifth level, anchors[0, :, :] tensor shape is (1536, 2) (must be the same as regression loss)
@@ -296,9 +296,9 @@ class RegressionLoss(nn.Module):
                         regression_diff - 0.5 / 9.0 # 9 is the square of sigma hyperparameter
                     )
                     # (number of positive anchors, 2)
-                    print(f"epoch: {epoch_num}, iter: {iter_num} regression prediction in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} regression targets in regressionLoss forward:\n {targets}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} jth_regression_loss in regressionLoss forward\n {jth_regression_loss}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th regression prediction in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th regression targets in regressionLoss forward:\n {targets}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th_regression_loss in regressionLoss forward\n {jth_regression_loss}")
 
                     regression_losses.append(jth_regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":

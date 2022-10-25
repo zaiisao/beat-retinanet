@@ -390,10 +390,10 @@ class ResNet(nn.Module):
                         regression_outputs[feature_index],
                         anchors[feature_index],
                         annotations,
-                        epoch_num=epoch_num, iter_num=iter_num
+                        epoch_num=epoch_num, iter_num=iter_num, feature_index=feature_index
                     ))
 
-                    print(f"feature index {feature_index}\ncls loss:\n {focal_losses[-1]}\n reg loss: {regression_losses[-1]}\n")
+                    #print(f"feature index {feature_index}\ncls loss:\n {focal_losses[-1]}\n reg loss: {regression_losses[-1]}\n")
 
                 # feature_index = len(feature_maps) - 1
                 # focal_losses.append(self.focalLoss(

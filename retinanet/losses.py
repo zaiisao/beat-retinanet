@@ -48,6 +48,11 @@ class FocalLoss(nn.Module):
         super(FocalLoss, self).__init__()
         self.fcos = fcos
 
+    # self.focalLoss(
+    #     classification_outputs[feature_index],
+    #     anchors[feature_index],
+    #     annotations
+    # )
     def forward(self, classifications, anchors, annotations, regress_limits=(0, float('inf'))):
         alpha = 0.25
         gamma = 2.0
@@ -145,19 +150,28 @@ class FocalLoss(nn.Module):
 
             bce = -(targets * torch.log(jth_classification) + (1.0 - targets) * torch.log(1.0 - jth_classification))
 
-            cls_loss = focal_weight * bce
+            cls_loss = focal_weight * bce   # in the case of the fifth feature map level,
+                                            # shape of the cls_loss tensor is (W_5 * 3, 2) = (512 * 3, 2) = (1536, 2)
+                                            # thus we have 1536 * 2 binary classifiers
 
             if torch.cuda.is_available():
                 cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape).cuda())
             else:
                 cls_loss = torch.where(torch.ne(targets, -1.0), cls_loss, torch.zeros(cls_loss.shape))
 
-            classification_losses.append(cls_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0))
+            classification_losses.append(cls_loss.sum()/torch.clamp(num_positive_anchors.float(), min=1.0)) # the shape of cls_loss.sum() is []
+        # END OF LOOP: for j in range(batch_size)
+        # classification_losses is a list of numbers with the length of batch size
 
         if self.fcos:
             return torch.stack(classification_losses).sum(dim=0)
         else:
-            return torch.stack(classification_losses).mean(dim=0, keepdim=True)
+            # the shape of torch.stack(classification_losses) is (batch_size) and is a vector
+            print(f"torch.stack(classification_losses) shape in focal loss forward: {torch.stack(classification_losses).shape}")
+            print(f"torch.stack(classification_losses) in focal loss forward: {torch.stack(classification_losses)}")
+            # torch.stack(classification_losses).mean(dim=0, keepdim=True) in focal loss forward: tensor([0.0710], grad_fn=<MeanBackward1>)
+            print(f"torch.stack(classification_losses).mean(dim=0, keepdim=True) in focal loss forward: {torch.stack(classification_losses).mean(dim=0, keepdim=True)}")
+            return torch.stack(classification_losses).mean(dim=0, keepdim=True) # shape of the returned tensor is (1,)
 
 class RegressionLoss(nn.Module):
     def __init__(self, fcos=False, loss_type="f1", weight=10, num_anchors=3):
@@ -167,7 +181,7 @@ class RegressionLoss(nn.Module):
         self.weight = weight
         self.num_anchors = num_anchors
 
-    def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf')),test=False):
+    def forward(self, regressions, anchors, annotations, regress_limits=(0, float('inf')),test=False, epoch_num=-1, iter_num=-1):
         # regressions is (B, C, W, H), with C = 4*num_anchors = 4*9
         # in our case, regressions is (B, C, W), with C = 2*num_anchors = 2*1
         batch_size = regressions.shape[0] 
@@ -230,11 +244,25 @@ class RegressionLoss(nn.Module):
                     targets_dx = (gt_ctr_x - anchor_ctr_x_pi) / anchor_widths_pi
                     targets_dw = torch.log(gt_widths / anchor_widths_pi)
 
-                    targets = torch.stack((targets_dx, targets_dw))
-                    targets = targets.t()
+                    # targets_dx shape:
+                    # torch.Size([371])
+                    # targets_dw shape:
+                    # torch.Size([371])
+                    # targets.shape before t():
+                    # torch.Size([2, 371])
+                    # targets.shape after t():
+                    # torch.Size([371, 2])
+                    # targets shape:
+                    # torch.Size([371, 2])
+                    print(f"epoch: {epoch_num}, iter: {iter_num} targets_dx shape:\n{targets_dx.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} targets_dw shape:\n{targets_dw.shape}")
+                    targets = torch.stack((targets_dx, targets_dw)) # the shape of targets is (2, num of positive_indices)
+                    print(f"epoch: {epoch_num}, iter: {iter_num} targets.shape before t():\n{targets.shape}")
+                    targets = targets.t()# the shape of targets is (num of positive_indices, 2)
+                    print(f"epoch: {epoch_num}, iter: {iter_num} targets.shape after t():\n{targets.shape}")
 
                     if torch.cuda.is_available():
-                        targets = targets/torch.Tensor([[0.1, 0.2]]).cuda()
+                        targets = targets/torch.Tensor([[0.1, 0.2]]).cuda() # the shape of torch.Tensor([[0.1, 0.2]] is (1, 2)
                     else:
                         targets = targets/torch.Tensor([[0.1, 0.2]])
 
@@ -244,19 +272,33 @@ class RegressionLoss(nn.Module):
 
                     negative_indices = 1 + (~positive_indices)
 
-                    regression_diff = torch.abs(targets - jth_regression[positive_indices, :])
-                    if test:
-                        print(f"regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
+                    # targets shape:
+                    # torch.Size([371, 2])
+                    # jth_regression[positive_indices, :] shape:
+                    # torch.Size([371, 2])
+                    # total number of anchors: 1536
+                    # total number of positive anchor indices: 371
 
+                    print(f"epoch: {epoch_num}, iter: {iter_num} targets shape:\n{targets.shape}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} jth_regression[positive_indices, :] shape:\n{jth_regression[positive_indices, :].shape}")
+                    regression_diff = torch.abs(targets - jth_regression[positive_indices, :]) # the shape of regression_diff is (num of positive_indices, 2)
+                    # the shape of jth_regression is (number of all anchors on the feature map, 2)
+                    # the shape of jth_regression[positive_indices, :] is (num of positive_indices, 2)
+
+                    if test:
+                        print(f"epoch: {epoch_num}, iter: {iter_num} regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
+
+                    # on fifth level, jth_regression_loss tensor shape is (512 * 3 = 1536, 2)
+                    # on fifth level, anchors[0, :, :] tensor shape is (1536, 2) (must be the same as regression loss)
                     jth_regression_loss = torch.where(
                         torch.le(regression_diff, 1.0 / 9.0),
                         0.5 * 9.0 * torch.pow(regression_diff, 2),
                         regression_diff - 0.5 / 9.0 # 9 is the square of sigma hyperparameter
                     )
                     # (number of positive anchors, 2)
-                    # print("regression", jth_regression[positive_indices, :])
-                    # print("targets", targets)
-                    # print("loss", regression_loss)
+                    print(f"epoch: {epoch_num}, iter: {iter_num} regression prediction in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} regression targets in regressionLoss forward:\n {targets}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} jth_regression_loss in regressionLoss forward\n {jth_regression_loss}")
 
                     regression_losses.append(jth_regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":

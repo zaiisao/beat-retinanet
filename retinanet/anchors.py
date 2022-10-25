@@ -48,7 +48,7 @@ class Anchors(nn.Module):
     def forward(self, base_image):
         base_image_shape = base_image.shape[2:]
         base_image_shape = np.array(base_image_shape)
-        print(f"base_image_shape: {base_image_shape}") # the size of the base level image is 8192 = 2^13, level 8 is the base level
+        # print(f"base_image_shape: {base_image_shape}") # the size of the base level image is 8192 = 2^13, level 8 is the base level
 
         #feature_map_shapes = [(base_image_shape + 2 ** x - 1) // (2 ** x) for x in self.pyramid_levels]
         feature_map_shapes = [
@@ -91,7 +91,7 @@ class Anchors(nn.Module):
         # 2.17128976 * 22050 / 256 = 187.01929378125 audio pixels = anchor box size
 
         # 0.185759637188209 seconds/sample * 11.688705861328125 samples = 2.171289760000004 sec
-        print(f"feature_map_shapes (tcn_layers[-3]):\n {feature_map_shapes}") # the top level feature map has 512 locations
+        # print(f"feature_map_shapes (tcn_layers[-3]):\n {feature_map_shapes}") # the top level feature map has 512 locations
 
         # if self.fcos:
         all_anchors = []

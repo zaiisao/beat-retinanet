@@ -268,7 +268,7 @@ class ResNet(nn.Module):
             if isinstance(layer, nn.BatchNorm1d):
                 layer.eval()
 
-    def forward(self, inputs):
+    def forward(self, inputs, epoch_num, iter_num):
         # inputs = audio, target
         self.training = len(inputs) == 2
 
@@ -336,6 +336,9 @@ class ResNet(nn.Module):
                                                 # the FPN will consist of C8, C9, C10, and two additional blocks P11, P12
                                                 # anchors[0] is the anchor boxes on the lowest level of the feature maps
                                                 # anchors[-1] is the anchor boxes on the highest level of the feature maps
+        # for anchor_index, anchor in enumerate(anchors):
+        #     print(f"anchor {anchor_index} shape: \n {anchors[anchor_index].shape}")
+        #     print(f"anchor {anchor_index}: \n {anchors[anchor_index][0, :10, :]}")
 
         if self.training:
             if self.fcos:
@@ -375,38 +378,46 @@ class ResNet(nn.Module):
                 #focal_loss = self.focalLoss(classification_outputs, anchors, annotations)
                 #regression_loss = self.regressionLoss(regression_outputs, anchors, annotations)
 
-                # for feature_index in range(len(feature_maps)):
-                #     focal_losses.append(self.focalLoss(
-                #         classification_outputs[feature_index],
-                #         anchors[feature_index],
-                #         annotations
-                #     ))
+                for feature_index in range(len(feature_maps)):
+                    # the shape of the self.focalLoss() is a one-dimensional vector (1,)
+                    focal_losses.append(self.focalLoss(
+                        classification_outputs[feature_index],
+                        anchors[feature_index],
+                        annotations
+                    ))
 
-                #     regression_losses.append(self.regressionLoss(
-                #         regression_outputs[feature_index],
-                #         anchors[feature_index],
-                #         annotations
-                #     ))
+                    regression_losses.append(self.regressionLoss(
+                        regression_outputs[feature_index],
+                        anchors[feature_index],
+                        annotations,
+                        epoch_num=epoch_num, iter_num=iter_num
+                    ))
 
-                feature_index = len(feature_maps) - 1
-                focal_losses.append(self.focalLoss(
-                    classification_outputs[feature_index],
-                    anchors[feature_index],
-                    annotations
-                ))
+                    print(f"feature index {feature_index}\ncls loss:\n {focal_losses[-1]}\n reg loss: {regression_losses[-1]}\n")
 
-                regression_losses.append(self.regressionLoss(
-                    regression_outputs[feature_index],
-                    anchors[feature_index],
-                    annotations
-                ))
-                print(f"regression_losses:\n {regression_losses}")
+                # feature_index = len(feature_maps) - 1
+                # focal_losses.append(self.focalLoss(
+                #     classification_outputs[feature_index],
+                #     anchors[feature_index],
+                #     annotations
+                # ))
+
+                # regression_losses.append(self.regressionLoss(
+                #     regression_outputs[feature_index],
+                #     anchors[feature_index],
+                #     annotations
+                # ))
+                # print(f"regression_losses:\n {regression_losses}")
 
                 # print(f"top focal loss: {self.focalLoss(classification_outputs_top, anchors[:, -1536:, :], annotations)}")
                 # print(f"top regression loss: {self.regressionLoss(regression_outputs_top, anchors[:, -1536:, :], annotations, test=True)}")
                 #
+                print(f"focal_losses in ResNet forward (before stack and mean):\n{focal_losses}")
+                print(f"regression_losses in ResNet forward (before stack and mean):\n{regression_losses}")
                 focal_loss = torch.stack(focal_losses).mean(dim=0, keepdim=True) # focal_losses is not a tensor but a list of tensors
                 regression_loss = torch.stack(regression_losses).mean(dim=0, keepdim=True) # regression_losses is not a tensor but a list of tensors
+                print(f"focal_loss in ResNet forward (after stack and mean):\n{focal_loss}")
+                print(f"regression_loss in ResNet forward (after stack and mean):\n{regression_loss}")
 
                 return focal_loss, regression_loss
         else:

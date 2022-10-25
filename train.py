@@ -265,18 +265,22 @@ if __name__ == '__main__':
                     classification_loss, regression_loss, centerness_loss = retinanet((audio, target))  # retinanet = model.resnet50(**dict_args)
                                                                                                         # this calls the forward function of resnet50
                 else:
-                    classification_loss, regression_loss = retinanet((audio, target))
+                    classification_loss, regression_loss = retinanet((audio, target), epoch_num, iter_num)
                     centerness_loss = torch.zeros(1)
                 # print(f"cls loss for each batch in train loop shape: \n {classification_loss.shape}")
                 # print(f"reg loss for each batch in train loop shape: \n {regression_loss.shape}")
                 # print(f"cls loss for each batch in train loop: \n {classification_loss}")
                 # print(f"reg loss for each batch in train loop: \n {regression_loss}")
-
+                print(f"cls loss in train loop (before mean):\n{classification_loss}")
+                print(f"reg loss in train loop (before mean):\n{regression_loss}")
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
                 centerness_loss = centerness_loss.mean()
+                print(f"cls loss in train loop (after mean):\n{classification_loss}")
+                print(f"reg loss in train loop (after mean):\n{regression_loss}")
 
                 loss = classification_loss + regression_loss + centerness_loss
+                print(f"total loss in train loop:\n{loss}")
 
                 if bool(loss == 0):
                     continue

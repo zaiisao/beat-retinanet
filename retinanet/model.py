@@ -378,7 +378,7 @@ class ResNet(nn.Module):
                 #focal_loss = self.focalLoss(classification_outputs, anchors, annotations)
                 #regression_loss = self.regressionLoss(regression_outputs, anchors, annotations)
 
-                for feature_index in range(len(feature_maps)):
+                for feature_index, feature_map in reversed(list(enumerate(feature_maps))):
                     # the shape of the self.focalLoss() is a one-dimensional vector (1,)
                     focal_losses.append(self.focalLoss(
                         classification_outputs[feature_index],

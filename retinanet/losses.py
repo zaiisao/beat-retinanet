@@ -296,9 +296,11 @@ class RegressionLoss(nn.Module):
                         regression_diff - 0.5 / 9.0 # 9 is the square of sigma hyperparameter
                     )
                     # (number of positive anchors, 2)
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th regression prediction in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th regression targets in regressionLoss forward:\n {targets}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th_regression_loss in regressionLoss forward\n {jth_regression_loss}")
+                    torch.set_printoptions(edgeitems=10000)
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, PREDICTION: {j}th in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, TARGETS: {j}th in regressionLoss forward:\n {targets}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, LOSS: {j}th in regressionLoss forward\n {jth_regression_loss}")
+                    torch.set_printoptions(edgeitems=3)
 
                     regression_losses.append(jth_regression_loss.mean())
                 elif self.loss_type == "iou" or self.loss_type == "giou":

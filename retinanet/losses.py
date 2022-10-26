@@ -261,14 +261,15 @@ class RegressionLoss(nn.Module):
                 IoU = calc_iou(anchors[:, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
                 positive_anchor_indices = torch.ge(IoU_max, 0.5)
+                negative_anchor_indices = torch.lt(IoU_max, 0.4)
+
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Num of anchors:\n{anchors.shape[0]}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Num of positive anchors:\n{positive_anchor_indices.sum()} " )
+
 
                 assigned_annotations_for_anchors = bbox_annotation[IoU_argmax, :]
 
-                
-                
-                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Num of anchors:\n{anchors.shape[0]}")
-                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Num of positive anchors:\n{positive_anchor_indices.sum()} " )
-                
+                                             
                 
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU:\n{IoU}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU_max:\n{IoU_max}")
@@ -333,7 +334,11 @@ class RegressionLoss(nn.Module):
                         #print(f"targets: {targets}")
                         #print(f"pred: {jth_regression[positive_indices, :]}")
 
-                    negative_anchor_indices = 1 + (~positive_anchor_indices)
+                    #negative_anchor_indices = 1 + (~positive_anchor_indices)
+
+                     
+                    
+
 
                     # targets shape:
                     # torch.Size([371, 2])
@@ -342,8 +347,7 @@ class RegressionLoss(nn.Module):
                     # total number of anchors: 1536
                     # total number of positive anchor indices: 371
 
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th  target_delta_for_anchors:\n{ target_delta_for_anchors.shape}")
-                              
+                                                
                    
                     regression_diff_for_anchors = torch.abs( target_delta_for_anchors - jth_regression[positive_anchor_indices, :])                 
                     # the shape of targets is (num of positive_indices, 2)
@@ -363,10 +367,12 @@ class RegressionLoss(nn.Module):
                     # the shape of jth_regression_loss number of positive anchors, 2); The first element is the offset loss for the center of each positive anchor box,
                     # The second element is the offset(ratio) loss for the width of each positive anchor box
 
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th  target_delta_for_anchors:\n{ target_delta_for_anchors.shape}")
+
                     torch.set_printoptions(edgeitems=10000)
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, PREDICTION: {j}th in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, TARGET_DELTA: {j}th in regressionLoss forward:\n { target_delta_for_anchors}")
-                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, LOSS: {j}th in regressionLoss forward\n {jth_regression_loss}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_anchor_indices.sum()}, PREDICTION: {j}th in regressionLoss forward:\n {jth_regression[positive_anchor_indices, :]}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_anchor_indices.sum()}, TARGET_DELTA: {j}th in regressionLoss forward:\n { target_delta_for_anchors}")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_anchor_indices.sum()}, LOSS: {j}th in regressionLoss forward\n {jth_regression_loss_for_anchors}")
                     torch.set_printoptions(edgeitems=3)
 
                     regression_losses.append(jth_regression_loss_for_anchors.mean())

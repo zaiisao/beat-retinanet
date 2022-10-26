@@ -231,7 +231,9 @@ if __name__ == '__main__':
 
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True) 
+    # provide optimizer to scheduler, so that it may reduce the learning rate, 
+    # which optimizer has information about.
 
     loss_hist = collections.deque(maxlen=500)
 
@@ -271,16 +273,18 @@ if __name__ == '__main__':
                 # print(f"reg loss for each batch in train loop shape: \n {regression_loss.shape}")
                 # print(f"cls loss for each batch in train loop: \n {classification_loss}")
                 # print(f"reg loss for each batch in train loop: \n {regression_loss}")
-                print(f"cls loss in train loop (before mean):\n{classification_loss}")
-                print(f"reg loss in train loop (before mean):\n{regression_loss}")
+                #print(f"cls loss in train loop (before mean):\n{classification_loss}")
+                #print(f"reg loss in train loop (before mean):\n{regression_loss}")
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
                 centerness_loss = centerness_loss.mean()
-                print(f"cls loss in train loop (after mean):\n{classification_loss}")
-                print(f"reg loss in train loop (after mean):\n{regression_loss}")
+                #MJ:
+                print(f"epoch: {epoch_num}, iter: {iter_num}:cls loss in train loop:\n{classification_loss}")
+                print(f"epoch: {epoch_num}, iter: {iter_num}:reg loss in train loop:\n{regression_loss}")
 
                 loss = classification_loss + regression_loss + centerness_loss
-                print(f"total loss in train loop:\n{loss}")
+                #MJ:
+                print(f"epoch: {epoch_num}, iter: {iter_num}:total loss in train loop:\n{loss}")
 
                 if bool(loss == 0):
                     continue
@@ -324,8 +328,18 @@ if __name__ == '__main__':
         # # print(f"cls loss for each epoch in train loop: \n {classification_loss}")
         # # print(f"reg loss for each epoch in train loop: \n {regression_loss}")
         # break # also debugging
+        #MJ:
+        print(f"epoch: {epoch_num}:total loss in train loop:\n{loss}")
 
-        scheduler.step(np.mean(epoch_loss))
+        scheduler.step(np.mean(epoch_loss))  # metric = np.mean(epoch_loss): 
+        # => If the current metric, the average of the epoch losses is worse than the current best metric,
+        #  reduce  the learning rate:
+
+        # => Reduce learning rate when a metric has stopped improving.
+        # Models often benefit from reducing the learning rate by a factor
+        # of 2-10 once learning stagnates. This scheduler reads a metrics
+        # quantity and if no improvement is seen for a 'patience' number
+        # of epochs, the learning rate is reduced.
 
         torch.save(retinanet.state_dict(), './checkpoints/retinanet_{}.pt'.format(epoch_num))
 

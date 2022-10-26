@@ -412,12 +412,12 @@ class ResNet(nn.Module):
                 # print(f"top focal loss: {self.focalLoss(classification_outputs_top, anchors[:, -1536:, :], annotations)}")
                 # print(f"top regression loss: {self.regressionLoss(regression_outputs_top, anchors[:, -1536:, :], annotations, test=True)}")
                 #
-                print(f"focal_losses in ResNet forward (before stack and mean):\n{focal_losses}")
-                print(f"regression_losses in ResNet forward (before stack and mean):\n{regression_losses}")
+                #print(f"focal_losses in ResNet forward (before stack and mean):\n{focal_losses}")
+                #print(f"regression_losses in ResNet forward (before stack and mean):\n{regression_losses}")
                 focal_loss = torch.stack(focal_losses).mean(dim=0, keepdim=True) # focal_losses is not a tensor but a list of tensors
                 regression_loss = torch.stack(regression_losses).mean(dim=0, keepdim=True) # regression_losses is not a tensor but a list of tensors
-                print(f"focal_loss in ResNet forward (after stack and mean):\n{focal_loss}")
-                print(f"regression_loss in ResNet forward (after stack and mean):\n{regression_loss}")
+                #print(f"epoch: {epoch_num}, iter: {iter_num}: focal_loss in ResNet forward:\n{focal_loss}")
+                #print(f"epoch: {epoch_num}, iter: {iter_num}: regression_loss in ResNet forward:\n{regression_loss}")
 
                 return focal_loss, regression_loss
         else:

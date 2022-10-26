@@ -281,9 +281,11 @@ class RegressionLoss(nn.Module):
 
                     print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th targets shape:\n{targets.shape}")
                     print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th_regression[positive_indices, :] shape:\n{jth_regression[positive_indices, :].shape}")
-                    regression_diff = torch.abs(targets - jth_regression[positive_indices, :]) # the shape of regression_diff is (num of positive_indices, 2)
-                    # the shape of jth_regression is (number of all anchors on the feature map, 2)
+                   
+                    regression_diff = torch.abs(targets - jth_regression[positive_indices, :])                 
+                    # the shape of targets is (num of positive_indices, 2)
                     # the shape of jth_regression[positive_indices, :] is (num of positive_indices, 2)
+                    # the shape of regression_diff is (num of positive_indices, 2)
 
                     if test:
                         print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th regression diff: {regression_diff[:, 0].mean(), regression_diff[:, 1].mean()}")
@@ -291,11 +293,13 @@ class RegressionLoss(nn.Module):
                     # on fifth level, jth_regression_loss tensor shape is (512 * 3 = 1536, 2)
                     # on fifth level, anchors[0, :, :] tensor shape is (1536, 2) (must be the same as regression loss)
                     jth_regression_loss = torch.where(
-                        torch.le(regression_diff, 1.0 / 9.0),
+                        torch.le(regression_diff, 1.0 / 9.0),  #MJ: regression_diff: shape = (num_positive_indicies, 2)
                         0.5 * 9.0 * torch.pow(regression_diff, 2),
                         regression_diff - 0.5 / 9.0 # 9 is the square of sigma hyperparameter
                     )
-                    # (number of positive anchors, 2)
+                    # the shape of jth_regression_loss number of positive anchors, 2); The first element is the offset loss for the center of each positive anchor box,
+                    # The second element is the offset(ratio) loss for the width of each positive anchor box
+
                     torch.set_printoptions(edgeitems=10000)
                     print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, PREDICTION: {j}th in regressionLoss forward:\n {jth_regression[positive_indices, :]}")
                     print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} total number of positive anchor boxes: {positive_indices.sum()}, TARGETS: {j}th in regressionLoss forward:\n {targets}")
@@ -303,6 +307,9 @@ class RegressionLoss(nn.Module):
                     torch.set_printoptions(edgeitems=3)
 
                     regression_losses.append(jth_regression_loss.mean())
+                    #jth_regression_loss.mean() is the mean over all positve  anchor boxes of the current feature maps and over the center loss and the width loss
+                    #jth_regression_loss.mean() returns the mean value of all elements in the input tensor jth_regression_loss.
+
                 elif self.loss_type == "iou" or self.loss_type == "giou":
                     #num_positive_anchors = positive_indices.sum()
 
@@ -382,6 +389,7 @@ class RegressionLoss(nn.Module):
                     #     return losses.sum()
 
                     regression_losses.append(losses.sum() * self.weight)
+                  
 
             else:
                 if torch.cuda.is_available():
@@ -391,6 +399,7 @@ class RegressionLoss(nn.Module):
 
         print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} torch.stack(regression_losses): {torch.stack(regression_losses)}")
         return torch.stack(regression_losses).mean(dim=0, keepdim=True) # return the regression loss averaged over the batch
+        #MJ: torch.stack(classification_losses).mean(dim=0) is the mean over all images in the current batch
 
 class CenternessLoss(nn.Module):
     def __init__(self, fcos=False):

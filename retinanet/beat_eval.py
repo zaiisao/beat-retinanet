@@ -19,6 +19,7 @@ def find_beats(t, p,
     # 1 - beat
 
     N = p.shape[-1]
+    print("p1", p)
 
     if filter_type == "savgol":
         # apply smoothing with savgol filter
@@ -33,6 +34,7 @@ def find_beats(t, p,
         p = scipy.signal.sosfilt(sos, p)
 
     # normalize the smoothed signal between 0.0 and 1.0
+    print("p2", p)
     p /= np.max(np.abs(p))                                     
 
     if peak_type == "simple":

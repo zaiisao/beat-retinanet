@@ -389,6 +389,7 @@ class RegressionLoss(nn.Module):
                 else:
                     regression_losses.append(torch.tensor(0).float())
 
+        print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index} torch.stack(regression_losses): {torch.stack(regression_losses)}")
         return torch.stack(regression_losses).mean(dim=0, keepdim=True) # return the regression loss averaged over the batch
 
 class CenternessLoss(nn.Module):

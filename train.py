@@ -328,7 +328,7 @@ if __name__ == '__main__':
         # # print(f"cls loss for each epoch in train loop: \n {classification_loss}")
         # # print(f"reg loss for each epoch in train loop: \n {regression_loss}")
         # break # also debugging
-        #MJ:
+        #
         print(f"epoch: {epoch_num}:total loss in train loop:\n{loss}")
 
         scheduler.step(np.mean(epoch_loss))  # metric = np.mean(epoch_loss): 

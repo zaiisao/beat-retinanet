@@ -171,7 +171,7 @@ class ClassificationModel(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers, fcos=False, reg_loss_type="f1", **kwargs):
+    def __init__(self, num_classes, block, layers, fcos=False, reg_loss_type="f1", **kwargs):
         #self.inplanes = 64
         self.inplanes = 256
         super(ResNet, self).__init__()
@@ -211,7 +211,7 @@ class ResNet(nn.Module):
         if self.fcos:
             num_anchors = 1
 
-        self.classificationModel = ClassificationModel(256, num_anchors=num_anchors)
+        self.classificationModel = ClassificationModel(256, num_anchors=num_anchors, num_classes=num_classes)
         self.regressionModel = RegressionModel(256, num_anchors=num_anchors, fcos=self.fcos)
 
         self.anchors = Anchors(base_level=8, fcos=self.fcos)
@@ -465,26 +465,26 @@ class ResNet(nn.Module):
 
 
 
-def resnet18(**kwargs):
+def resnet18(num_classes, **kwargs):
     """Constructs a ResNet-18 model."""
-    return ResNet(BasicBlock, [2, 2, 2, 2], **kwargs)
+    return ResNet(num_classes, BasicBlock, [2, 2, 2, 2], **kwargs)
 
 
-def resnet34(**kwargs):
+def resnet34(num_classes, **kwargs):
     """Constructs a ResNet-34 model."""
-    return ResNet(BasicBlock, [3, 4, 6, 3], **kwargs)
+    return ResNet(num_classes, BasicBlock, [3, 4, 6, 3], **kwargs)
 
 
-def resnet50(**kwargs):
+def resnet50(num_classes, **kwargs):
     """Constructs a ResNet-50 model."""
-    return ResNet(Bottleneck, [3, 4, 6, 3], **kwargs)
+    return ResNet(num_classes, Bottleneck, [3, 4, 6, 3], **kwargs)
 
 
-def resnet101(**kwargs):
+def resnet101(num_classes, **kwargs):
     """Constructs a ResNet-101 model."""
-    return ResNet(Bottleneck, [3, 4, 23, 3], **kwargs)
+    return ResNet(num_classes, Bottleneck, [3, 4, 23, 3], **kwargs)
 
 
-def resnet152(**kwargs):
+def resnet152(num_classes, **kwargs):
     """Constructs a ResNet-152 model."""
-    return ResNet(Bottleneck, [3, 8, 36, 3], **kwargs)
+    return ResNet(num_classes, Bottleneck, [3, 8, 36, 3], **kwargs)

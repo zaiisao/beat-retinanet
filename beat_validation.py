@@ -22,7 +22,7 @@ threshold = 0.4
 
 def main(args=None):
     parser = argparse.ArgumentParser(description='Simple training script for training a RetinaNet network.')
-    parser.add_argument('--checkpoints_dir', type=str, default='./', help='Path to pre-trained model log directory with checkpoint.')
+    parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='Path to pre-trained model log directory with checkpoint.')
     parser.add_argument('--preload', action="store_true")
     parser.add_argument('--num_workers', type=int, default=0)
     parser.add_argument('--beatles_audio_dir', type=str, default='./data')
@@ -244,13 +244,15 @@ def main(args=None):
 
             target_sample_rate = args.audio_sample_rate // args.target_factor
 
-            beat_scores, downbeat_scores = evaluate(wavebeat_format_pred,#.view(2,-1),  
-                                                    wavebeat_format_target,#.view(2,-1), 
+            print("AAA", wavebeat_format_pred)
+            beat_scores, downbeat_scores = evaluate(wavebeat_format_pred.view(2,-1),  
+                                                    wavebeat_format_target.view(2,-1), 
                                                     target_sample_rate,
                                                     use_dbn=False)
 
-            dbn_beat_scores, dbn_downbeat_scores = evaluate(wavebeat_format_pred,#.view(2,-1), 
-                                                    wavebeat_format_target,#.view(2,-1), 
+            print("BBB", wavebeat_format_pred)
+            dbn_beat_scores, dbn_downbeat_scores = evaluate(wavebeat_format_pred.view(2,-1), 
+                                                    wavebeat_format_target.view(2,-1), 
                                                     target_sample_rate,
                                                     use_dbn=True)
 

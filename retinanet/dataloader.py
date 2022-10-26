@@ -545,3 +545,6 @@ class BeatDataset(torch.utils.data.Dataset):
         audio /= audio.float().abs().max()
 
         return audio, target
+
+    def num_classes():
+        return 2

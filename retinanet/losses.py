@@ -52,12 +52,12 @@ class FocalLoss(nn.Module):
         alpha = 0.25
         gamma = 2.0
 
-        anchor = anchors[0, :, :]
-
         batch_size = classifications.shape[0]
         classification_losses = []
 
         if self.fcos:
+            anchor = anchors[0, :, :]
+
             # anchors = (x, y) in feature map
             # [[x1, y1, x2, y2], [x1, y1, x2, y2], [x1, y1, x2, y2], []]
             assert torch.all(anchor[:, 0] == anchor[:, 1])
@@ -110,6 +110,19 @@ class FocalLoss(nn.Module):
                     regress_limits[1]
                 )
             else:
+                for _, current_layer_anchors in enumerate(anchors):
+                    anchor_widths = current_layer_anchors[0, :, 1] - current_layer_anchors[0, :, 0]
+                    anchor_center_x = current_layer_anchors[0, :, 0] + anchor_widths // 2
+                    anchor_center = torch.stack((anchor_center_x, torch.ones(anchor_center_x.shape)), dim=1)
+
+                    bbox_widths = bbox_annotation[:, 1] - bbox_annotation[:, 0]
+                    bbox_center_x = bbox_annotation[:, 0] + bbox_widths // 2
+                    bbox_center = torch.stack((bbox_center_x, torch.ones(bbox_center_x.shape)), dim=1)
+
+                    distances = (anchor_center[:, None, :] - bbox_center[None, :, :]).pow(2).sum(-1).sqrt()
+
+                    raise ValueError
+
                 targets = torch.ones(jth_classification.shape) * -1
 
                 IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2])

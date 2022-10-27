@@ -55,7 +55,7 @@ class FocalLoss(nn.Module):
     # )
     def forward(self, classifications, anchors, annotations, regress_limits=(0, float('inf')),  epoch_num=-1, iter_num=-1, feature_index=-1):
         alpha = 0.25 # foreground examples: background examples = 1:3 => 1/3 = 0.333: Try to use the inverse ratio of the positive and negative samples
-        
+
         gamma = 2.0
 
         anchors = anchors[0, :, :]
@@ -260,6 +260,9 @@ class RegressionLoss(nn.Module):
             else:
                 #MJ: IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
                 IoU = calc_iou(anchors[:, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
+
+                #MJ: Let us try to print the values of bbox_annotations!
+                
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
                 positive_anchor_indices = torch.ge(IoU_max, 0.5)
                 negative_anchor_indices = torch.lt(IoU_max, 0.4)

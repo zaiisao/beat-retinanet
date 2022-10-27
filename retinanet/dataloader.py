@@ -284,7 +284,7 @@ class BeatDataset(torch.utils.data.Dataset):
         downbeat_sec = np.array(downbeat_samples) / self.audio_sample_rate
 
         T = audio.shape[-1]/self.audio_sample_rate #  audio.shape[-1] = audio length in samples; T = audio length in sec
-        N = int(T * self.target_sample_rate) + 1   # target length in samples
+        N = int(T * self.target_sample_rate) + 1   # target length in samples at 2^8 level
         target = torch.zeros(2,N)
 
         # now convert from seconds to new sample rate
@@ -298,8 +298,8 @@ class BeatDataset(torch.utils.data.Dataset):
         beat_samples = beat_samples.astype(int)
         downbeat_samples = downbeat_samples.astype(int)
 
-        target[0,beat_samples] = 1  # first channel is beats: beat_samples = beat sample locations = indicies
-        target[1,downbeat_samples] = 1  # second channel is downbeats: downbeat_samples = downbeat sample locations = indicies
+        target[0,beat_samples] = 1  # The first channel is beats: beat_samples = beat sample locations/indicies at 2^8 level
+        target[1,downbeat_samples] = 1  # The second channel is downbeats: downbeat_samples = downbeat sample locations at 2^8
 
         metadata = {
             "Filename" : audio_filename,
@@ -386,7 +386,7 @@ class BeatDataset(torch.utils.data.Dataset):
         downbeats = target[1, :]
         #non_downbeats = beats - downbeats
 
-        beat_locations = torch.nonzero(beats).squeeze()  # torch.nonzero(beats) = N  x 1 matrix of nonzero args 
+        beat_locations = torch.nonzero(beats).squeeze()  # MJ:??? correct? torch.nonzero(beats) = N  x 1 matrix of beats indicies whose values are nonzero 
         # tensor.squeeze(): Returns a tensor with all the dimensions of input of size 1 removed.
         # When dim is given, a squeeze operation is done only in the given dimension
 

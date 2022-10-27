@@ -262,6 +262,9 @@ class RegressionLoss(nn.Module):
                 IoU = calc_iou(anchors[:, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
 
                 #MJ: Let us try to print the values of bbox_annotations!
+                torch.set_printoptions(edgeitems=10000)
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: bbox_annotations::\n{bbox_annotation}")
+                torch.set_printoptions(edgeitems=3)
                 
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
                 positive_anchor_indices = torch.ge(IoU_max, 0.5)
@@ -274,12 +277,12 @@ class RegressionLoss(nn.Module):
                 assigned_annotations_for_anchors = bbox_annotation[IoU_argmax, :]
 
                                              
-                
+                torch.set_printoptions(edgeitems=10000)
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU:\n{IoU}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU_max:\n{IoU_max}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU_argmax:\n{IoU_argmax}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Annotations assigned to anchor boxes (maxially overlapped with anchor boxes): \n{assigned_annotations_for_anchors}")
-
+                torch.set_printoptions(edgeitems=3)
 
             if positive_anchor_indices.sum() > 0:
                 #MJ: assigned_annotations = assigned_annotations[positive_indices, :]

@@ -43,6 +43,9 @@ def get_fcos_positives(bbox_annotation, anchor, lower_limit, upper_limit):
 
     return positive_indices, assigned_annotations, left, right
 
+iou_threshold_lower = 0.3
+iou_threshold_upper = 0.7
+
 class FocalLoss(nn.Module):
     def __init__(self, fcos=False):
         super(FocalLoss, self).__init__()
@@ -126,8 +129,8 @@ class FocalLoss(nn.Module):
                 # print(f"IoU_max shape in focal loss: {IoU_max.shape}")
                 # print(f"IoU_argmax shape in focal loss: {IoU_argmax.shape}")
 
-                targets[torch.lt(IoU_max, 0.4), :] = 0
-                positive_indices = torch.ge(IoU_max, 0.5)
+                targets[torch.lt(IoU_max, iou_threshold_lower), :] = 0
+                positive_indices = torch.ge(IoU_max, iou_threshold_upper)
 
                 assigned_annotations = bbox_annotation[IoU_argmax, :]
 
@@ -222,17 +225,29 @@ class RegressionLoss(nn.Module):
             else:
                 IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2]) # num_anchors x num_annotations
                 IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
-                positive_indices = torch.ge(IoU_max, 0.5)
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, bbox_annotation shape:\n {bbox_annotation.shape}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, bbox_annotation:\n {bbox_annotation}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, IoU_max.shape:\n {IoU_max.shape}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, IoU_max:\n {IoU_max}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, IoU_argmax.shape:\n {IoU_argmax.shape}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, IoU_argmax: {IoU_argmax}")
+                positive_indices = torch.ge(IoU_max, iou_threshold_upper)
                 assigned_annotations = bbox_annotation[IoU_argmax, :]
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, assigned_annotations.shape:\n {assigned_annotations.shape}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, assigned_annotations: {assigned_annotations}")
+
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th anchor box count: {anchors.size(dim=1)}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th number of bounding boxes: {bbox_annotation.size(dim=0)}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th number of bounding boxes: {bbox_annotation.size(dim=0)}")
 
             if positive_indices.sum() > 0:
-                assigned_annotations = assigned_annotations[positive_indices, :]
+                positive_annotations = assigned_annotations[positive_indices, :]
 
                 anchor_widths_pi = anchor_widths[positive_indices]
                 anchor_ctr_x_pi = anchor_ctr_x[positive_indices]
 
-                gt_widths  = assigned_annotations[:, 1] - assigned_annotations[:, 0]
-                gt_ctr_x   = assigned_annotations[:, 0] + 0.5 * gt_widths
+                gt_widths  = positive_annotations[:, 1] - positive_annotations[:, 0]
+                gt_ctr_x   = positive_annotations[:, 0] + 0.5 * gt_widths
                 # print("gt", gt_widths)
                 # print("anchor", anchor_widths_pi)
 
@@ -271,6 +286,14 @@ class RegressionLoss(nn.Module):
                         #print(f"pred: {jth_regression[positive_indices, :]}")
 
                     negative_indices = 1 + (~positive_indices)
+
+                    test_num_positive = torch.ge(IoU_max, iou_threshold_upper).sum()
+                    test_num_negative = torch.le(IoU_max, iou_threshold_lower).sum()
+                    test_num_vague = torch.logical_and(torch.lt(IoU_max, iou_threshold_upper), torch.gt(IoU_max, iou_threshold_lower)).sum()
+                    test_total = test_num_positive + test_num_negative + test_num_vague
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th positive indices (>{iou_threshold_upper}): {test_num_positive} ({int(test_num_positive / test_total * 100)}%)")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th negative indices (<{iou_threshold_lower}): {test_num_negative} ({int(test_num_negative / test_total * 100)}%)")
+                    print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th vague indices ({iou_threshold_lower}~{iou_threshold_upper}): {test_num_vague} ({int(test_num_vague / test_total * 100)}%)\n")
 
                     # targets shape:
                     # torch.Size([371, 2])

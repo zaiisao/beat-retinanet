@@ -214,7 +214,7 @@ class BeatDataset(torch.utils.data.Dataset):
         # apply augmentations 
         if self.augment:
             audio, target = self.apply_augmentations(audio, target)
-
+        print(f"target.nonzero().squeeze() in __getitem__ after augmentations: {target.nonzero().squeeze()}")
         N_audio = audio.shape[-1]   # The num of audio samples
         N_target = target.shape[-1] # The num of target samples
 
@@ -244,7 +244,7 @@ class BeatDataset(torch.utils.data.Dataset):
             target = torch.nn.functional.pad(target, 
                                              (padl, padr), 
                                              mode=self.pad_mode)
-
+        print(f"target.nonzero().squeeze() in __getitem__ after augmentations: {target.nonzero().squeeze()}")
         annot = self.make_intervals(target) # Target:  (2,N); annot: could be  tensor([], size=(0, 3)): these annotations will be padded by -1 in collater()
 
         if self.subset in ["train", "full-train"]:
@@ -389,8 +389,12 @@ class BeatDataset(torch.utils.data.Dataset):
         beat_locations = torch.nonzero(beats).squeeze()  # MJ:??? correct? torch.nonzero(beats) = N  x 1 matrix of beats indicies whose values are nonzero 
         # tensor.squeeze(): Returns a tensor with all the dimensions of input of size 1 removed.
         # When dim is given, a squeeze operation is done only in the given dimension
+        print(f"beat_locations shape in dataloader: {beat_locations.shape}")
+        print(f"beat_locations in dataloader: {beat_locations}")
 
         downbeat_locations = torch.nonzero(downbeats).squeeze()
+        print(f"downbeat_locations shape in dataloader: {downbeat_locations.shape}")
+        print(f"downbeat_locations in dataloader: {downbeat_locations}")
         #non_downbeat_locations = torch.nonzero(non_downbeats).squeeze()
 
         # equivalent code in retinanet "load_annotations" function in dataloader

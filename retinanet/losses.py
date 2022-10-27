@@ -43,8 +43,8 @@ def get_fcos_positives(bbox_annotation, anchor, lower_limit, upper_limit):
 
     return positive_indices, assigned_annotations, left, right
 
-iou_threshold_lower = 0.3
-iou_threshold_upper = 0.7
+iou_threshold_lower = 0.4
+iou_threshold_upper = 0.5
 
 class FocalLoss(nn.Module):
     def __init__(self, fcos=False):
@@ -243,7 +243,9 @@ class RegressionLoss(nn.Module):
             jth_regression = regressions[j, :, :] # j'th audio in the current batch
 
             bbox_annotation = annotations[j, :, :]
+            print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th bbox annotation (before removing -1):\n{bbox_annotation}")
             bbox_annotation = bbox_annotation[bbox_annotation[:, 2] != -1] # bbox_annotation[:, 2] is the classification label
+            print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th bbox annotation (after removing -1):\n{bbox_annotation}")
 
             if bbox_annotation.shape[0] == 0:
                 if torch.cuda.is_available():
@@ -281,6 +283,8 @@ class RegressionLoss(nn.Module):
 
                                              
                 torch.set_printoptions(edgeitems=10000)
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Anchors shape:\n{anchors.shape}")
+                print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: Anchors length:\n{anchors[:, 1] - anchors[:, 0]}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU:\n{IoU}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU_max:\n{IoU_max}")
                 print(f"epoch: {epoch_num}, iter: {iter_num} feature_index: {feature_index}, {j}th sample: IoU_argmax:\n{IoU_argmax}")

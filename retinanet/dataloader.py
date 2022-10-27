@@ -12,7 +12,7 @@ import soxbindings as sox
 torchaudio.set_audio_backend("sox_io")
 
 def collater(data):
-    # data = one batch of [audio, annot(, metadata)]
+    # data = one batch of [audio, annot(, metadata)] = created by calling __get_item__() batch_size times
     audios = [s[0] for s in data]
     annots = [s[1] for s in data]
     # print(f"audios length in collater:\n {len(audios)}")
@@ -99,7 +99,9 @@ class BeatDataset(torch.utils.data.Dataset):
 
         # if length = 2097152 and target_factor is 256, target_length = 8192
         # downsampling tcn's output tensor dimension is (b, 256, 8192) (b, channel, width/length)
+
         self.target_length = int(self.length / self.target_factor)
+
         #print(f"Audio length: {self.length}")
         #print(f"Target length: {self.target_length}")
 
@@ -213,10 +215,11 @@ class BeatDataset(torch.utils.data.Dataset):
         if self.augment:
             audio, target = self.apply_augmentations(audio, target)
 
-        N_audio = audio.shape[-1]   # audio samples
-        N_target = target.shape[-1] # target samples
+        N_audio = audio.shape[-1]   # The num of audio samples
+        N_target = target.shape[-1] # The num of target samples
 
         # random crop of the audio and target if larger than desired
+        # self.target_length = 8192
         if (N_audio > self.length or N_target > self.target_length) and self.subset not in ['val', 'test', 'full-val']:
             audio_start = np.random.randint(0, N_audio - self.length - 1)
             audio_stop  = audio_start + self.length
@@ -242,7 +245,7 @@ class BeatDataset(torch.utils.data.Dataset):
                                              (padl, padr), 
                                              mode=self.pad_mode)
 
-        annot = self.make_intervals(target)
+        annot = self.make_intervals(target) # Target:  (2,N); annot: could be  tensor([], size=(0, 3)): these annotations will be padded by -1 in collater()
 
         if self.subset in ["train", "full-train"]:
             return audio, annot
@@ -280,8 +283,8 @@ class BeatDataset(torch.utils.data.Dataset):
         beat_sec = np.array(beat_samples) / self.audio_sample_rate
         downbeat_sec = np.array(downbeat_samples) / self.audio_sample_rate
 
-        t = audio.shape[-1]/self.audio_sample_rate # audio length in sec
-        N = int(t * self.target_sample_rate) + 1   # target length in samples
+        T = audio.shape[-1]/self.audio_sample_rate #  audio.shape[-1] = audio length in samples; T = audio length in sec
+        N = int(T * self.target_sample_rate) + 1   # target length in samples
         target = torch.zeros(2,N)
 
         # now convert from seconds to new sample rate
@@ -295,8 +298,8 @@ class BeatDataset(torch.utils.data.Dataset):
         beat_samples = beat_samples.astype(int)
         downbeat_samples = downbeat_samples.astype(int)
 
-        target[0,beat_samples] = 1  # first channel is beats
-        target[1,downbeat_samples] = 1  # second channel is downbeats
+        target[0,beat_samples] = 1  # first channel is beats: beat_samples = beat sample locations = indicies
+        target[1,downbeat_samples] = 1  # second channel is downbeats: downbeat_samples = downbeat sample locations = indicies
 
         metadata = {
             "Filename" : audio_filename,
@@ -383,12 +386,15 @@ class BeatDataset(torch.utils.data.Dataset):
         downbeats = target[1, :]
         #non_downbeats = beats - downbeats
 
-        beat_locations = torch.nonzero(beats).squeeze()
+        beat_locations = torch.nonzero(beats).squeeze()  # torch.nonzero(beats) = N  x 1 matrix of nonzero args 
+        # tensor.squeeze(): Returns a tensor with all the dimensions of input of size 1 removed.
+        # When dim is given, a squeeze operation is done only in the given dimension
+
         downbeat_locations = torch.nonzero(downbeats).squeeze()
         #non_downbeat_locations = torch.nonzero(non_downbeats).squeeze()
 
         # equivalent code in retinanet "load_annotations" function in dataloader
-        annotations = torch.zeros((0, 3))
+        annotations = torch.zeros((0, 3))  # tensor([], size=(0, 3))
 
         # some audio can miss annotations
         # interval을 만드려면 한 리스트에 2개 이상이 있어야 함
@@ -408,11 +414,11 @@ class BeatDataset(torch.utils.data.Dataset):
                 interval[0, 1] = next_beat_location
                 interval[0, 2] = class_id
 
-                intervals = torch.cat((intervals, interval), axis=0)
+                intervals = torch.cat( (intervals, interval), axis=0)
 
             return intervals
 
-        annotations = torch.cat((
+        annotations = torch.cat( (
             annotations,
             make_interval_subset(downbeat_locations, 0),
             #make_interval_subset(non_downbeat_locations, 1)

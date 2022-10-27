@@ -54,7 +54,8 @@ class FocalLoss(nn.Module):
     #     annotations
     # )
     def forward(self, classifications, anchors, annotations, regress_limits=(0, float('inf')),  epoch_num=-1, iter_num=-1, feature_index=-1):
-        alpha = 0.25
+        alpha = 0.25 # foreground examples: background examples = 1:3 => 1/3 = 0.333: Try to use the inverse ratio of the positive and negative samples
+        
         gamma = 2.0
 
         anchors = anchors[0, :, :]

@@ -383,7 +383,8 @@ class ResNet(nn.Module):
                     focal_losses.append(self.focalLoss(
                         classification_outputs[feature_index],
                         anchors[feature_index],
-                        annotations
+                        annotations,
+                        epoch_num=epoch_num, iter_num=iter_num, feature_index=feature_index
                     ))
 
                     regression_losses.append(self.regressionLoss(

@@ -55,12 +55,12 @@ def get_atss_positives(bbox_annotation, anchors):
 
     #gt_cx = (bboxes_per_im[:, 2] + bboxes_per_im[:, 0]) / 2.0
     gt_cx = (bbox_annotation[:, 1] + bbox_annotation[:, 0]) / 2.0
-    gt_cy = torch.ones(gt_cx.shape)#(bboxes_per_im[:, 3] + bboxes_per_im[:, 1]) / 2.0
+    gt_cy = torch.ones(gt_cx.shape).to(gt_cx.device)#(bboxes_per_im[:, 3] + bboxes_per_im[:, 1]) / 2.0
     gt_points = torch.stack((gt_cx, gt_cy), dim=1)
 
     #anchors_cx_per_im = (anchors_per_im.bbox[:, 2] + anchors_per_im.bbox[:, 0]) / 2.0
     anchors_cx_per_im = (all_anchors[0, :, 1] + all_anchors[0, :, 0]) / 2.0
-    anchors_cy_per_im = torch.ones(anchors_cx_per_im.shape)#(anchors_per_im.bbox[:, 3] + anchors_per_im.bbox[:, 1]) / 2.0
+    anchors_cy_per_im = torch.ones(anchors_cx_per_im.shape).to(anchors_cx_per_im.device)#(anchors_per_im.bbox[:, 3] + anchors_per_im.bbox[:, 1]) / 2.0
     anchor_points = torch.stack((anchors_cx_per_im, anchors_cy_per_im), dim=1)
 
     distances = (anchor_points[:, None, :] - gt_points[None, :, :]).pow(2).sum(-1).sqrt()

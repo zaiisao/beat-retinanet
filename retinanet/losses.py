@@ -107,11 +107,13 @@ def get_atss_positives(bbox_annotation, anchors):
     ious_inf = ious_inf.view(num_gt, -1).t()
 
     anchors_to_gt_values, anchors_to_gt_indexs = ious_inf.max(dim=1)
-    cls_labels_per_im = bbox_annotation[anchors_to_gt_indexs]
-    cls_labels_per_im[anchors_to_gt_values == -100000000] = 0
-    matched_gts = bbox_annotation[anchors_to_gt_indexs]
+    # cls_labels_per_im = bbox_annotation[anchors_to_gt_indexs]
+    # cls_labels_per_im[anchors_to_gt_values == -100000000] = 0
 
-    return anchors_to_gt_indexs, matched_gts
+    positive_indices = anchors_to_gt_values != -100000000
+    assigned_annotations = bbox_annotation[anchors_to_gt_indexs]
+
+    return positive_indices, assigned_annotations
 
 class FocalLoss(nn.Module):
     def __init__(self, fcos=False):
@@ -182,13 +184,15 @@ class FocalLoss(nn.Module):
             else:
                 # targets = torch.ones(jth_classification.shape) * -1
 
-                # IoU = calc_iou(anchors[0, :, :], bbox_annotation[:, :2])
+                # all_anchors = torch.cat(anchors, dim=1)
+                # IoU = calc_iou(all_anchors[0, :, :], bbox_annotation[:, :2])
                 # IoU_max, IoU_argmax = torch.max(IoU, dim=1) # num_anchors x 1
 
                 # targets[torch.lt(IoU_max, 0.4), :] = 0
                 # positive_indices = torch.ge(IoU_max, 0.5)
 
                 # assigned_annotations = bbox_annotation[IoU_argmax, :]
+
                 targets = torch.zeros(jth_classification.shape)
                 positive_indices, assigned_annotations = get_atss_positives(bbox_annotation, anchors)
 

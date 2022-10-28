@@ -10,8 +10,8 @@
             "request": "launch",
             "program": "${file}",
             "args": [
-                "--ballroom_audio_dir", "../../beat-tracking-dataset/labeled_data/train/br_test/data",
-                "--ballroom_annot_dir", "../../beat-tracking-dataset/labeled_data/train/br_test/label",
+                "--ballroom_audio_dir", "../br_test/data",
+                "--ballroom_annot_dir", "../br_test/label",
                 "--preload", "--patience", "10",
                 "--train_length", "2097152",
                 "--eval_length", "2097152",

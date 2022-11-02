@@ -198,15 +198,15 @@ dict_args = vars(args)
 if __name__ == '__main__':
     # Create the model
     if args.depth == 18:
-        retinanet = model.resnet18(num_classes=train_dataloader.num_classes(), **dict_args)
+        retinanet = model.resnet18(num_classes=2, **dict_args)
     elif args.depth == 34:
-        retinanet = model.resnet34(num_classes=train_dataloader.num_classes(), **dict_args)
+        retinanet = model.resnet34(num_classes=2, **dict_args)
     elif args.depth == 50:
-        retinanet = model.resnet50(num_classes=train_dataloader.num_classes(), **dict_args)
+        retinanet = model.resnet50(num_classes=2, **dict_args)
     elif args.depth == 101:
-        retinanet = model.resnet101(num_classes=train_dataloader.num_classes(), **dict_args)
+        retinanet = model.resnet101(num_classes=2, **dict_args)
     elif args.depth == 152:
-        retinanet = model.resnet152(num_classes=train_dataloader.num_classes(), **dict_args)
+        retinanet = model.resnet152(num_classes=2, **dict_args)
     else:
         raise ValueError('Unsupported model depth, must be one of 18, 34, 50, 101, 152')
 
@@ -231,7 +231,9 @@ if __name__ == '__main__':
 
     optimizer = torch.optim.Adam(retinanet.parameters(), lr=1e-5)
 
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True)
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, verbose=True) 
+    # provide optimizer to scheduler, so that it may reduce the learning rate, 
+    # which optimizer has information about.
 
     loss_hist = collections.deque(maxlen=500)
 
@@ -254,6 +256,9 @@ if __name__ == '__main__':
             if use_gpu and torch.cuda.is_available():
                 audio = audio.cuda()
                 target = target.cuda()
+            # print(f"audio.shape in train loop:\n {audio.shape}")
+            # print(f"target.shape in train loop:\n {target.shape}")
+            # print(f"target in train loop:\n {target}")
 
             try:
                 optimizer.zero_grad()
@@ -262,14 +267,24 @@ if __name__ == '__main__':
                     classification_loss, regression_loss, centerness_loss = retinanet((audio, target))  # retinanet = model.resnet50(**dict_args)
                                                                                                         # this calls the forward function of resnet50
                 else:
-                    classification_loss, regression_loss = retinanet((audio, target))
+                    classification_loss, regression_loss = retinanet((audio, target), epoch_num, iter_num)
                     centerness_loss = torch.zeros(1)
-    
+                # print(f"cls loss for each batch in train loop shape: \n {classification_loss.shape}")
+                # print(f"reg loss for each batch in train loop shape: \n {regression_loss.shape}")
+                # print(f"cls loss for each batch in train loop: \n {classification_loss}")
+                # print(f"reg loss for each batch in train loop: \n {regression_loss}")
+                #print(f"cls loss in train loop (before mean):\n{classification_loss}")
+                #print(f"reg loss in train loop (before mean):\n{regression_loss}")
                 classification_loss = classification_loss.mean()
                 regression_loss = regression_loss.mean()
                 centerness_loss = centerness_loss.mean()
+                #MJ:
+                print(f"epoch: {epoch_num}, iter: {iter_num}:cls loss in train loop:\n{classification_loss}")
+                print(f"epoch: {epoch_num}, iter: {iter_num}:reg loss in train loop:\n{regression_loss}")
 
                 loss = classification_loss + regression_loss + centerness_loss
+                #MJ:
+                print(f"epoch: {epoch_num}, iter: {iter_num}:total loss in train loop:\n{loss}")
 
                 if bool(loss == 0):
                     continue
@@ -307,7 +322,24 @@ if __name__ == '__main__':
                 traceback.print_exc()
                 continue
 
-        scheduler.step(np.mean(epoch_loss))
+        #     break # for debugging
+        # # print(f"cls loss for each epoch in train loop shape: \n {classification_loss.shape}")
+        # # print(f"reg loss for each epoch in train loop shape: \n {regression_loss.shape}")
+        # # print(f"cls loss for each epoch in train loop: \n {classification_loss}")
+        # # print(f"reg loss for each epoch in train loop: \n {regression_loss}")
+        # break # also debugging
+        #
+        print(f"epoch: {epoch_num}:total loss in train loop:\n{loss}")
+
+        scheduler.step(np.mean(epoch_loss))  # metric = np.mean(epoch_loss): 
+        # => If the current metric, the average of the epoch losses is worse than the current best metric,
+        #  reduce  the learning rate:
+
+        # => Reduce learning rate when a metric has stopped improving.
+        # Models often benefit from reducing the learning rate by a factor
+        # of 2-10 once learning stagnates. This scheduler reads a metrics
+        # quantity and if no improvement is seen for a 'patience' number
+        # of epochs, the learning rate is reduced.
 
         torch.save(retinanet.state_dict(), './checkpoints/retinanet_{}.pt'.format(epoch_num))
 
